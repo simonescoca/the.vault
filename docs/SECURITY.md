@@ -140,9 +140,13 @@ quell'account si sospendono per un'ora. Ogni nuovo collegamento genera un'email 
 
 - **Portachiavi**: VK, chiave privata del dispositivo, token, hash del PIN, contatore errori.
   - macOS: Portachiavi "classico" (l'app non ha una firma Apple Developer; con una firma ufficiale si potrà passare al
-    portachiavi moderno). Limite noto: dopo un aggiornamento dell'app non firmata, macOS può chiedere una volta la
-    password del Mac per consentire l'accesso al portachiavi ("Consenti sempre").
+    portachiavi moderno). Tutti i segreti stanno in **un'unica voce** del portachiavi ("The Vault"): l'accesso è
+    concesso dal portachiavi alla sola app che l'ha creata. Limite noto: la firma "ad-hoc" cambia a ogni versione,
+    quindi dopo un aggiornamento macOS chiede **una volta** la password del Mac per consentire l'accesso
+    ("Consenti sempre").
   - Windows: protezione dati di Windows (DPAPI) legata al tuo utente.
+  - L'app macOS non usa la "sandbox" di Apple (serve solo per l'App Store): è distribuita come le app scaricate dal
+    web, con il solo permesso di rete dichiarato.
 - **Database locale** (SQLite): contiene le voci **già cifrate** (lo stesso formato del server), le modifiche in attesa
   e le impostazioni non sensibili. Gli allegati scaricati restano cifrati.
 - **Sblocco**:
@@ -155,6 +159,14 @@ quell'account si sospendono per un'ora. Ogni nuovo collegamento genera un'email 
 - **Memoria**: VK sta in memoria protetta di libsodium (`sodium_malloc`) e viene distrutta al blocco. I dati decifrati
   delle voci vengono rilasciati al blocco (Dart non permette di azzerarli in modo garantito: limite noto).
 - **Appunti**: svuotati dopo il tempo impostato (default 1 minuto), solo se contengono ancora il valore copiato.
+  Ogni valore copiato è marcato come privato:
+  - macOS: tipo "concealed" (i gestori di appunti che seguono nspasteboard.org non lo mostrano né lo conservano) e
+    **solo su questo Mac** (niente Appunti universali verso iPhone o altri Mac);
+  - Windows: escluso dalla **cronologia degli appunti** (Win+V), dagli **appunti nel cloud** e dai programmi che
+    sorvegliano gli appunti.
+- **Al blocco** (manuale, per inattività o quando il computer va in stop) si chiudono tutte le finestre aperte
+  dell'app (impostazioni, approvazione di un nuovo dispositivo, kit di emergenza…), i menu e i messaggi: sopra la
+  schermata di blocco non resta nulla. I file temporanei degli allegati aperti vengono cancellati.
 
 ## 10. Server (Mac mini)
 

@@ -39,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _editKey = GlobalKey<DetailEditState>();
   StreamSubscription<ApprovalInfo>? _approvals;
   StreamSubscription<VaultNotice>? _notices;
+  StreamSubscription<String>? _menu;
   bool _approvalOpen = false;
   final _approvalQueue = <ApprovalInfo>[];
 
@@ -48,6 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final app = context.app;
     home.setSection(Section.all);
     _approvals = app.approvalRequests.listen(_onApproval);
+    _menu = app.platform.menuCommands.listen(_onMenu);
     // After unlocking, the keyboard focus belongs to the main window (shortcuts work right away).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _homeFocus.requestFocus();
@@ -61,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _approvals?.cancel();
     _notices?.cancel();
+    _menu?.cancel();
     home.dispose();
     if (widget.favicons == null) favicons.dispose();
     _searchFocus.dispose();
@@ -79,6 +82,21 @@ class _HomeScreenState extends State<HomeScreen> {
     await showApprovalDialog(context, a);
     _approvalOpen = false;
     if (_approvalQueue.isNotEmpty && mounted) _onApproval(_approvalQueue.removeAt(0));
+  }
+
+  // ------------------------------------------------------------ menu bar
+
+  /// A command from the macOS menu bar. "Lock" always works; the others only when no dialog is open.
+  void _onMenu(String command) {
+    if (!mounted) return;
+    if (command == 'lock') return context.app.lockNow();
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    switch (command) {
+      case 'newItem':
+        _new();
+      case 'settings':
+        _openSettings();
+    }
   }
 
   // --------------------------------------------------------------- editing
@@ -160,7 +178,6 @@ class _HomeScreenState extends State<HomeScreen> {
         if (!home.editing) home.startEdit();
       },
       k(LogicalKeyboardKey.keyS): _save,
-      k(LogicalKeyboardKey.keyL): () => context.app.lockNow(),
       k(LogicalKeyboardKey.comma): _openSettings,
       const SingleActivator(LogicalKeyboardKey.escape): () {
         if (home.editing) {

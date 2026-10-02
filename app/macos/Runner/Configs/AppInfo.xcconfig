@@ -5,10 +5,10 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = the_vault
+PRODUCT_NAME = The Vault
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = it.simonescoca.theVault
+PRODUCT_BUNDLE_IDENTIFIER = it.simonescoca.thevault
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 it.simonescoca. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 simonescoca

@@ -66,3 +66,14 @@ class AppSettings extends ChangeNotifier {
   static Locale systemLocale(List<Locale>? preferred) =>
       preferred != null && preferred.isNotEmpty && preferred.first.languageCode == 'it' ? const Locale('it') : const Locale('en');
 }
+
+/// The saved window position, if it is still on a connected screen (at least 160×100 points of the window
+/// visible); otherwise null, so the window opens centered (e.g. after unplugging an external monitor).
+Rect? visibleWindowBounds(Rect? saved, List<Rect> screens) {
+  if (saved == null || saved.width < 100 || saved.height < 100) return null;
+  for (final screen in screens) {
+    final i = saved.intersect(screen);
+    if (i.width >= 160 && i.height >= 100) return saved;
+  }
+  return null;
+}

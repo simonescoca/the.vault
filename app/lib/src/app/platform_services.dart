@@ -1,10 +1,13 @@
 // Operating-system integrations behind an interface (replaced by fakes in tests).
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'windows_clipboard.dart';
 
 abstract class PlatformServices {
   /// macos | windows | linux
@@ -25,12 +28,30 @@ abstract class PlatformServices {
   Future<String?> pickFile({List<String>? extensions});
   Future<String?> saveFileDialog(String suggestedName, {List<String>? extensions});
 
+  /// Copies a value privately where the system allows it (see [SystemPlatformServices.setClipboard]).
   Future<void> setClipboard(String text);
   Future<String?> getClipboard();
+
+  /// Commands chosen in the menu bar (macOS): "newItem", "lock", "settings".
+  Stream<String> get menuCommands;
 }
 
 class SystemPlatformServices implements PlatformServices {
+  SystemPlatformServices() {
+    if (Platform.isMacOS) {
+      // macos/Runner/AppDelegate.swift
+      const MethodChannel('thevault/menu').setMethodCallHandler((call) async => _menu.add(call.method));
+    }
+  }
+
   final _auth = LocalAuthentication();
+  final _menu = StreamController<String>.broadcast();
+
+  /// macos/Runner/MainFlutterWindow.swift
+  static const _macClipboard = MethodChannel('thevault/clipboard');
+
+  @override
+  Stream<String> get menuCommands => _menu.stream;
 
   @override
   String get platform => Platform.isMacOS ? 'macos' : (Platform.isWindows ? 'windows' : 'linux');
@@ -113,8 +134,21 @@ class SystemPlatformServices implements PlatformServices {
     return uri?.toFilePath();
   }
 
+  /// Copied values are secrets: on macOS they are marked "concealed" (clipboard managers skip them) and
+  /// stay on this Mac (no Universal Clipboard); on Windows they stay out of the clipboard history and
+  /// of the cloud clipboard. If that is not possible, a normal copy.
   @override
-  Future<void> setClipboard(String text) => Clipboard.setData(ClipboardData(text: text));
+  Future<void> setClipboard(String text) async {
+    if (text.isNotEmpty) {
+      if (Platform.isWindows && copyPrivateWindows(text)) return;
+      if (Platform.isMacOS) {
+        try {
+          if (await _macClipboard.invokeMethod<bool>('copy', text) == true) return;
+        } catch (_) {}
+      }
+    }
+    await Clipboard.setData(ClipboardData(text: text));
+  }
 
   @override
   Future<String?> getClipboard() async => (await Clipboard.getData(Clipboard.kTextPlain))?.text;

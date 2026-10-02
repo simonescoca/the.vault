@@ -1,4 +1,5 @@
 // Builds the real app (offline, no server) for widget tests.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -17,6 +18,10 @@ import 'package:the_vault/src/ui/detail/detail_view.dart';
 
 class FakePlatform implements PlatformServices {
   String? clipboard;
+  final menu = StreamController<String>.broadcast();
+
+  @override
+  Stream<String> get menuCommands => menu.stream;
   final opened = <Uri>[];
   final openedFiles = <String>[];
   bool biometrics = false;

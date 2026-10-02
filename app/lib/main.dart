@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'src/app/app_controller.dart';
@@ -28,10 +29,10 @@ Future<void> main() async {
   final dataDir = Platform.environment['THEVAULT_DATA'] ?? (await getApplicationSupportDirectory()).path;
   await Directory(dataDir).create(recursive: true);
   final settings = await AppSettings.load(dataDir);
-  final secrets = Platform.isLinux ? FileSecretStore('$dataDir/dev-secrets.json') : OsSecretStore();
+  final secrets = Platform.isLinux ? FileSecretStore('$dataDir/dev-secrets.json') : BundledSecretStore(OsSecretStore());
 
   await windowManager.ensureInitialized();
-  final bounds = settings.windowBounds;
+  final bounds = await _restorableBounds(settings.windowBounds);
   await windowManager.waitUntilReadyToShow(
     WindowOptions(
       size: bounds?.size ?? const Size(1180, 760),
@@ -58,6 +59,17 @@ Future<void> main() async {
   );
   await app.init();
   runApp(TheVaultApp(app: app));
+}
+
+/// The saved window bounds, unless that place is no longer on any screen.
+Future<Rect?> _restorableBounds(Rect? saved) async {
+  if (saved == null) return null;
+  try {
+    final displays = await screenRetriever.getAllDisplays();
+    return visibleWindowBounds(saved, [for (final d in displays) (d.visiblePosition ?? Offset.zero) & (d.visibleSize ?? d.size)]);
+  } catch (_) {
+    return saved;
+  }
 }
 
 /// Remembers the window size and position.

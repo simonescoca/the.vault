@@ -28,12 +28,64 @@ class MemorySecretStore implements SecretStore {
   Future<void> deleteAll() async => values.clear();
 }
 
+/// Keeps all the secrets of this device in ONE entry of [inner].
+///
+/// Without an Apple Developer signature, macOS asks after every app update for permission to read
+/// each keychain entry (with the Mac password): one entry means one question instead of six.
+class BundledSecretStore implements SecretStore {
+  BundledSecretStore(this.inner, {this.entry = 'secrets'});
+
+  final SecretStore inner;
+  final String entry;
+  Future<void> _last = Future.value();
+
+  /// Runs read-modify-write steps one after the other, so two writes never overwrite each other.
+  Future<T> _serial<T>(Future<T> Function() step) {
+    final r = _last.then((_) => step());
+    _last = r.then((_) {}, onError: (_) {});
+    return r;
+  }
+
+  Future<Map<String, String>> _load() async {
+    final raw = await inner.read(entry);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return Map<String, String>.from(jsonDecode(raw) as Map);
+    } on FormatException {
+      return {};
+    }
+  }
+
+  Future<void> _store(Map<String, String> m) => m.isEmpty ? inner.delete(entry) : inner.write(entry, jsonEncode(m));
+
+  @override
+  Future<String?> read(String key) => _serial(() async => (await _load())[key]);
+
+  @override
+  Future<void> write(String key, String value) => _serial(() async {
+        final m = await _load();
+        if (m[key] == value) return;
+        m[key] = value;
+        await _store(m);
+      });
+
+  @override
+  Future<void> delete(String key) => _serial(() async {
+        final m = await _load();
+        if (m.remove(key) != null) await _store(m);
+      });
+
+  @override
+  Future<void> deleteAll() => _serial(inner.deleteAll);
+}
+
+/// The system keychain (macOS) or the DPAPI-protected store (Windows). Wrapped in [BundledSecretStore].
 class OsSecretStore implements SecretStore {
   OsSecretStore()
       : _storage = const FlutterSecureStorage(
           // Without an Apple Developer signature the app cannot use the "data protection" keychain,
           // so it uses the classic login keychain (docs/SECURITY.md §9).
-          mOptions: MacOsOptions(usesDataProtectionKeychain: false, accountName: 'The Vault'),
+          mOptions: MacOsOptions(usesDataProtectionKeychain: false, accountName: 'The Vault', label: 'The Vault'),
         );
 
   final FlutterSecureStorage _storage;

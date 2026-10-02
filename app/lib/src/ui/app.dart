@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -49,10 +50,26 @@ class _TheVaultAppState extends State<TheVaultApp> {
   final _toasts = ToastController();
   final _navKey = GlobalKey<NavigatorState>();
   StreamSubscription<AppNotice>? _sub;
+  late AppPhase _phase;
+
+  /// Once the vault locks, nothing of it may stay on screen: dialogs (settings, approval of a new device,
+  /// emergency kit…), menus and messages close, whatever was open.
+  void _onAppChanged() {
+    final phase = widget.app.phase;
+    if (phase == _phase) return;
+    final wasOpen = _phase == AppPhase.unlocked;
+    _phase = phase;
+    if (wasOpen) {
+      _navKey.currentState?.popUntil((route) => route.isFirst);
+      _toasts.hide();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _phase = widget.app.phase;
+    widget.app.addListener(_onAppChanged);
     _sub = widget.app.notices.listen((n) {
       final ctx = _navKey.currentContext;
       if (ctx == null || !ctx.mounted) return;
@@ -67,6 +84,7 @@ class _TheVaultAppState extends State<TheVaultApp> {
 
   @override
   void dispose() {
+    widget.app.removeListener(_onAppChanged);
     _sub?.cancel();
     _toasts.dispose();
     super.dispose();
@@ -97,11 +115,15 @@ class _TheVaultAppState extends State<TheVaultApp> {
         builder: (context, child) => AppScope(
           app: app,
           toasts: _toasts,
-          child: Listener(
-            // Any pointer activity postpones the automatic lock.
-            onPointerDown: (_) => app.registerActivity(),
-            onPointerSignal: (_) => app.registerActivity(),
-            child: ToastHost(controller: _toasts, child: child!),
+          child: CallbackShortcuts(
+            // ⌘L / Ctrl+L locks from anywhere, dialogs included.
+            bindings: {SingleActivator(LogicalKeyboardKey.keyL, meta: Platform.isMacOS, control: !Platform.isMacOS): app.lockNow},
+            child: Listener(
+              // Any pointer activity postpones the automatic lock.
+              onPointerDown: (_) => app.registerActivity(),
+              onPointerSignal: (_) => app.registerActivity(),
+              child: ToastHost(controller: _toasts, child: child!),
+            ),
           ),
         ),
         home: const RootView(),

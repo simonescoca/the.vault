@@ -113,4 +113,32 @@ void main() {
     expect(fieldWithHint('Search'), findsOneWidget);
     await finish(tester, t);
   });
+
+  testWidgets('locking closes every dialog; menu bar commands', (tester) async {
+    final t = await pumpUnlockedApp(tester, items: [sampleItem('Banca', [('pin', '4821')])]);
+    // Menu bar → Settings… opens the settings.
+    t.platform.menu.add('settings');
+    await tester.pumpAndSettle();
+    expect(find.text('Sicurezza'), findsOneWidget);
+    // Other commands wait while a dialog is open.
+    t.platform.menu.add('newItem');
+    await tester.pumpAndSettle();
+    expect(fieldWithHint('sito web'), findsNothing);
+    // ⌘L / Ctrl+L locks from inside a dialog too, and nothing of the vault stays on screen.
+    await shortcut(tester, LogicalKeyboardKey.keyL);
+    expect(t.app.phase, AppPhase.locked);
+    expect(find.text('Sicurezza'), findsNothing);
+    expect(find.text('The Vault è bloccato'), findsOneWidget);
+
+    tester.testTextInput.enterText('123456');
+    await tester.pump();
+    await waitUntil(tester, () => t.app.phase == AppPhase.unlocked);
+    t.platform.menu.add('newItem');
+    await tester.pumpAndSettle();
+    expect(fieldWithHint('sito web'), findsOneWidget);
+    t.platform.menu.add('lock');
+    await tester.pumpAndSettle();
+    expect(t.app.phase, AppPhase.locked);
+    await finish(tester, t);
+  });
 }
