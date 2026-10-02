@@ -103,9 +103,9 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 
 ### Fase 0 — Preparazione
 - [!] **T0.1** Verifica push su GitHub. *Bloccato: l'app GitHub di Claude non è installata sulla repo (errore 403).*
-- [ ] **T0.2** Piano di lavoro (`todo.md`) e struttura della repo
-- [ ] **T0.3** Strumenti di sviluppo (Flutter, Go) e prova di compilazione
-- [ ] **T0.4** Test automatici su GitHub (CI) per server e app
+- [x] **T0.2** Piano di lavoro (`todo.md`) e struttura della repo
+- [x] **T0.3** Strumenti di sviluppo (Flutter, Go) e prova di compilazione
+- [~] **T0.4** Test automatici su GitHub (CI) per server e app. *Workflow scritto; si potrà verificare solo quando il push funzionerà.*
 
 ### Fase 1 — Progettazione
 - [ ] **T1.1** Specifiche funzionali dettagliate: schermate, comportamenti, regole (`docs/SPEC.md`)
@@ -194,3 +194,17 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
   Flutter va installato (ultima stabile: 3.47.6). Le librerie che servono (biometria, portachiavi, libsodium,
   trascinamento file, SQLite) esistono e sono aggiornate al 2026.
 - Scritto questo `todo.md`.
+
+- **T0.2 ✅ Struttura della repo**: `app/` (Flutter), `server/` (Go), `docs/`, `scripts/test-all.sh` (lancia tutti i test),
+  `.github/workflows/ci.yml`, `README.md`.
+- **T0.3 ✅ Strumenti**: installato Flutter 3.47.6 e le librerie di sistema per compilare e provare l'app su Linux
+  (qui non ho un Mac né un PC Windows: provo su Linux e GitHub compilerà per Mac e Windows).
+  - libsodium 1.0.22 (cifratura) e SQLite 3.53 (database) si compilano e funzionano dentro l'app.
+  - L'app di prova si compila e gira su uno schermo virtuale, da cui faccio gli screenshot: così controllo l'aspetto.
+  - Il server Go si compila per il Mac mini (Apple Silicon) già firmato "ad-hoc", come richiede macOS.
+  - 🟡 *Scivolone (risolto)*: il primo controllo automatico del codice (analyze) falliva per 4 avvisi nel test di prova
+    (funzioni deprecate della libreria di cifratura). Corretto usando le funzioni nuove.
+  - Nota: `sodium_libs` è deprecato nel 2026; si usa direttamente `sodium`, che compila libsodium da sé su ogni piattaforma.
+- **T0.4 🟡 CI**: workflow pronto (test server, test app, compilazione su macOS e Windows). Non verificabile finché il push
+  è bloccato.
+- **Test dopo la Fase 0**: `scripts/test-all.sh` → ✅ tutto verde (server: vet ok; app: analyze 0 problemi, 3 test ok).
