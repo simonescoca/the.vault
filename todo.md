@@ -108,10 +108,10 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [~] **T0.4** Test automatici su GitHub (CI) per server e app. *Workflow scritto; si potrà verificare solo quando il push funzionerà.*
 
 ### Fase 1 — Progettazione
-- [ ] **T1.1** Specifiche funzionali dettagliate: schermate, comportamenti, regole (`docs/SPEC.md`)
-- [ ] **T1.2** Progetto di sicurezza: chiavi, cifratura, approvazione dispositivi, kit di emergenza (`docs/SECURITY.md`)
-- [ ] **T1.3** Protocollo app ↔ server: API, sincronizzazione, tempo reale (`docs/PROTOCOL.md`)
-- [ ] **T1.4** Design visivo: font, colori, spaziature, icone, componenti; anteprime delle schermate principali
+- [x] **T1.1** Specifiche funzionali dettagliate: schermate, comportamenti, regole (`docs/SPEC.md`)
+- [x] **T1.2** Progetto di sicurezza: chiavi, cifratura, approvazione dispositivi, kit di emergenza (`docs/SECURITY.md`)
+- [x] **T1.3** Protocollo app ↔ server: API, sincronizzazione, tempo reale (`docs/PROTOCOL.md`)
+- [x] **T1.4** Design visivo: font, colori, spaziature, icone, componenti (`docs/DESIGN.md`). *Le anteprime delle schermate arrivano con la Fase 4, renderizzate dall'app vera.*
 
 ### Fase 2 — Server (Mac mini)
 - [ ] **T2.1** Scheletro del server: configurazione, database, log, avvio
@@ -208,3 +208,20 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - **T0.4 🟡 CI**: workflow pronto (test server, test app, compilazione su macOS e Windows). Non verificabile finché il push
   è bloccato.
 - **Test dopo la Fase 0**: `scripts/test-all.sh` → ✅ tutto verde (server: vet ok; app: analyze 0 problemi, 3 test ok).
+
+- **Fase 1 ✅ Progettazione** (4 documenti in `docs/`):
+  - `SPEC.md`: tutte le schermate e i comportamenti, comprese le regole di salvataggio delle righe.
+  - `SECURITY.md`: chi conosce quali chiavi, come si cifrano voci e allegati, come funziona l'approvazione di un nuovo
+    dispositivo.
+    - Ragionando sull'approvazione ho trovato una **trappola**: con un semplice codice di 6 cifre calcolato dalla chiave
+      del nuovo dispositivo, un server compromesso potrebbe provare milioni di chiavi finché il codice coincide
+      (bastano pochi secondi). Ho adottato il **confronto numerico con impegno** (lo schema del Bluetooth): ogni dispositivo
+      si "impegna" prima di vedere i dati dell'altro, quindi un intruso ha 1 possibilità su un milione e un solo tentativo.
+  - `PROTOCOL.md`: le API del server, il canale in tempo reale e l'algoritmo di sincronizzazione con i conflitti.
+  - `DESIGN.md`: colori monocromatici chiaro/scuro, tipografia, spazi, icone (Lucide), finestra.
+  - **Font scelti dopo un confronto renderizzato** (`docs/design/font-specimen.png`): **Geist** per titoli, chiavi e
+    descrizione; **Geist Mono** per i valori. Geist Mono ha lo zero barrato e distingue `1 l I`
+    (`docs/design/mono-ambiguous-chars.png`). L'alternativa (Inter + JetBrains Mono) era valida ma meno elegante,
+    e il suo zero si confonde di più con la O.
+  - 🟡 *Scivolone (risolto)*: nel primo confronto i testi apparivano sottolineati in giallo. Era l'avviso di Flutter per i
+    testi fuori da un contenitore "Material", non un problema dei font: corretto il banco di prova.
