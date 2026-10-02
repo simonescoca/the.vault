@@ -1,0 +1,212 @@
+name: Release
+
+# Publishes a version: push a tag like v1.0.0, or run this workflow by hand (Actions → Release → Run workflow).
+# Files of the release (names never change, so "latest" links keep working):
+#   TheVault-macOS.dmg               the Mac app (Apple Silicon and Intel)
+#   TheVault-Windows-Setup.exe       the Windows installer (Windows 10/11, 64 bit)
+#   thevault-server-macos-*.tar.gz   the server for the Mac mini
+#   install-server.sh                installs or updates the server
+#   SHA256SUMS.txt                   fingerprints, checked by install-server.sh
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versione da pubblicare (es. 1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: "3.47.6"
+  INNO_SETUP_URL: https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe
+  INNO_SETUP_SHA256: 9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then v="${INPUT_VERSION#v}"; else v="${GITHUB_REF_NAME#v}"; fi
+          if ! echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Versione non valida: $v (formato: 1.0.0)"
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Server
+        working-directory: server
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test -race -count=1 ./...
+      - name: App
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+  server:
+    name: Server (Mac mini)
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Build for Apple Silicon and Intel
+        working-directory: server
+        run: |
+          mkdir -p dist
+          for arch in arm64 amd64; do
+            mkdir -p "build/$arch"
+            GOOS=darwin GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+              -o "build/$arch/thevault-server" ./cmd/thevault-server
+            tar -C "build/$arch" -czf "dist/thevault-server-macos-$arch.tar.gz" thevault-server
+          done
+          cp ../scripts/install-server.sh dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server
+          path: server/dist/*
+          if-no-files-found: error
+
+  macos:
+    name: App (macOS)
+    needs: [version, test]
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build macos --release --build-name="$VERSION" --build-number="$GITHUB_RUN_NUMBER" --dart-define=APP_VERSION="$VERSION"
+      - name: Check the signature and make the .dmg
+        working-directory: app
+        run: |
+          APP="build/macos/Build/Products/Release/The Vault.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          lipo -archs "$APP/Contents/MacOS/The Vault"
+          mkdir -p dmg dist
+          cp -R "$APP" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "The Vault" -srcfolder dmg -ov -format UDZO dist/TheVault-macOS.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: app/dist/TheVault-macOS.dmg
+          if-no-files-found: error
+
+  windows:
+    name: App (Windows)
+    needs: [version, test]
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build windows --release --build-name="$env:VERSION" --build-number="$env:GITHUB_RUN_NUMBER" --dart-define=APP_VERSION="$env:VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "flutter build failed" }
+      - name: Add the Visual C++ runtime next to the app (PCs without it)
+        working-directory: app
+        run: |
+          foreach ($dll in "msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll") {
+            Copy-Item "$env:WINDIR\System32\$dll" "build\windows\x64\runner\Release\"
+          }
+      - name: Make the installer (Inno Setup)
+        working-directory: app
+        run: |
+          $setup = "$env:RUNNER_TEMP\innosetup.exe"
+          Invoke-WebRequest $env:INNO_SETUP_URL -OutFile $setup
+          if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne $env:INNO_SETUP_SHA256) { throw "Inno Setup: unexpected file" }
+          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$env:RUNNER_TEMP\InnoSetup" -Wait
+          & "$env:RUNNER_TEMP\InnoSetup\ISCC.exe" "/DAppVersion=$env:VERSION" "windows\installer\TheVault.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: app/build/installer/TheVault-Windows-Setup.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [version, server, macos, windows]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Fingerprints
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Create the release
+        run: |
+          base="https://github.com/$GITHUB_REPOSITORY"
+          cat > notes.md <<EOF
+          ## Scarica
+
+          - **Mac** (Apple Silicon e Intel, macOS 12 o più recente): [TheVault-macOS.dmg]($base/releases/download/v$VERSION/TheVault-macOS.dmg)
+          - **Windows** 10 e 11: [TheVault-Windows-Setup.exe]($base/releases/download/v$VERSION/TheVault-Windows-Setup.exe)
+          - **Server** per il Mac mini: nel Terminale
+            \`curl -fsSL $base/releases/latest/download/install-server.sh | bash\`
+            (lo stesso comando aggiorna un server già installato)
+
+          Guide passo passo: [installare il server]($base/blob/main/docs/guida-server.md) ·
+          [installare l'app]($base/blob/main/docs/guida-app.md)
+          EOF
+          gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" --title "The Vault $VERSION" \
+            --notes-file notes.md --target "$GITHUB_SHA"

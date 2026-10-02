@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/simonescoca/the.vault/server/internal/backup"
 	"github.com/simonescoca/the.vault/server/internal/config"
 )
 
@@ -172,15 +173,27 @@ func Status(dataDir string) error {
 		fmt.Println("  Fuori casa:       ✓", cfg.PublicURL)
 		fmt.Println("  Indirizzo per l'app:", strings.TrimPrefix(cfg.PublicURL, "https://"))
 	}
-	dir := cfg.Backup.Dir
-	if dir == "" {
-		dir = dataDir + "/backups"
-	}
-	entries, _ := os.ReadDir(dir + "/snapshots")
-	if len(entries) == 0 {
-		fmt.Println("  Ultimo backup:    nessuno ancora")
-	} else {
-		fmt.Println("  Ultimo backup:   ", entries[len(entries)-1].Name(), "in", dir)
-	}
+	fmt.Println("  Backup:          ", backupSummary(cfg))
 	return nil
+}
+
+// backupSummary describes the latest backup for 'status'.
+func backupSummary(cfg *config.Config) string {
+	st := backup.ReadStatus(cfg)
+	when := func(ms int64) string { return time.UnixMilli(ms).Format("02/01/2006 15:04") }
+	switch {
+	case st.LastAttempt == 0:
+		return "nessuno ancora (il primo parte 30 secondi dopo l'avvio del server)"
+	case st.LastError == "":
+		return "✓ ultimo riuscito il " + when(st.LastSuccess) + " in " + backup.Dir(cfg)
+	}
+	msg := "✗ l'ultimo (" + when(st.LastAttempt) + ") non è riuscito: " + st.LastError
+	if strings.Contains(st.LastError, "operation not permitted") || strings.Contains(st.LastError, "permission denied") {
+		msg += "\n                    macOS non lascia scrivere il server in " + backup.Dir(cfg) +
+			": esegui 'thevault-server setup' e scegli la cartella proposta."
+	}
+	if st.LastSuccess != 0 {
+		msg += "\n                    Ultimo riuscito: " + when(st.LastSuccess)
+	}
+	return msg
 }

@@ -1,7 +1,8 @@
 // Package backup makes daily snapshots of the server data.
 //
-// Everything in a backup is already end-to-end encrypted by the apps, so backups can be stored
-// anywhere (an external disk, iCloud Drive, …). Layout of the backup folder:
+// Everything in a backup is already end-to-end encrypted by the apps. The folder must be one that macOS
+// lets a background service write to: not iCloud Drive, Desktop, Documents, Downloads or external disks
+// (see setup.BlockedBackupLocation); Time Machine can then copy it elsewhere. Layout of the backup folder:
 //
 //	snapshots/2026-10-02_033000/thevault.db   consistent copy of the database
 //	snapshots/2026-10-02_033000/manifest.json
@@ -166,12 +167,47 @@ func Snapshots(cfg *config.Config) ([]string, error) {
 	return out, nil
 }
 
+// Status is the outcome of the latest backup, kept in <data>/backup-status.json for 'thevault-server status'.
+type Status struct {
+	LastAttempt int64  `json:"lastAttempt,omitempty"` // Unix milliseconds
+	LastSuccess int64  `json:"lastSuccess,omitempty"`
+	LastDir     string `json:"lastDir,omitempty"`
+	LastError   string `json:"lastError,omitempty"` // empty when the latest attempt worked
+}
+
+func statusPath(cfg *config.Config) string { return filepath.Join(cfg.DataDir, "backup-status.json") }
+
+// ReadStatus returns the outcome of the latest backup (zero if there was none yet).
+func ReadStatus(cfg *config.Config) Status {
+	var s Status
+	if b, err := os.ReadFile(statusPath(cfg)); err == nil {
+		_ = json.Unmarshal(b, &s)
+	}
+	return s
+}
+
+// RunAndRecord makes a backup now and records the outcome.
+func RunAndRecord(ctx context.Context, cfg *config.Config, st *store.Store) (string, error) {
+	dir, err := Run(ctx, cfg, st)
+	s := ReadStatus(cfg)
+	s.LastAttempt = time.Now().UnixMilli()
+	if err != nil {
+		s.LastError = err.Error()
+	} else {
+		s.LastSuccess, s.LastDir, s.LastError = s.LastAttempt, dir, ""
+	}
+	if b, jerr := json.Marshal(s); jerr == nil {
+		_ = os.WriteFile(statusPath(cfg), b, 0o600)
+	}
+	return dir, err
+}
+
 // RunDaily makes a backup every day at cfg.Backup.Hour (local time). If the latest snapshot is older
-// than a day (e.g. the Mac was off at backup time) it makes one shortly after start.
+// than a day (e.g. the Mac was off at backup time, or this is the first start) it makes one shortly after start.
 func RunDaily(ctx context.Context, cfg *config.Config, st *store.Store, log *slog.Logger) {
 	first := nextRun(time.Now(), cfg.Backup.Hour)
 	if snaps, err := Snapshots(cfg); err != nil || len(snaps) == 0 || stale(snaps[0], time.Now()) {
-		first = time.Now().Add(2 * time.Minute)
+		first = time.Now().Add(30 * time.Second)
 	}
 	timer := time.NewTimer(time.Until(first))
 	defer timer.Stop()
@@ -181,8 +217,8 @@ func RunDaily(ctx context.Context, cfg *config.Config, st *store.Store, log *slo
 			return
 		case <-timer.C:
 		}
-		if dir, err := Run(ctx, cfg, st); err != nil {
-			log.Error("backup failed", "error", err)
+		if dir, err := RunAndRecord(ctx, cfg, st); err != nil {
+			log.Error("backup failed", "dir", Dir(cfg), "error", err)
 		} else {
 			log.Info("backup done", "dir", dir)
 		}

@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -99,5 +102,71 @@ func TestPlistEscapesPaths(t *testing.T) {
 	if !strings.Contains(p, "/Users/a&amp;b/bin/thevault-server") || !strings.Contains(p, "<string>serve</string>") ||
 		!strings.Contains(p, "<key>KeepAlive</key>") {
 		t.Fatalf("plist:\n%s", p)
+	}
+}
+
+func TestRunningVersion(t *testing.T) {
+	vault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/health" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, `{"service":"thevault","version":"1.2.3","time":1}`)
+	}))
+	defer vault.Close()
+	if v, err := runningVersion(vault.URL + "/"); err != nil || v != "1.2.3" {
+		t.Fatalf("version: %q %v", v, err)
+	}
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"service":"something-else","version":"9"}`)
+	}))
+	defer other.Close()
+	if _, err := runningVersion(other.URL); err == nil {
+		t.Fatal("another service was taken for The Vault")
+	}
+}
+
+func TestBlockedBackupLocations(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, dir := range []string{
+		filepath.Join(home, "Library", "Mobile Documents", "com~apple~CloudDocs", "The Vault Backup"),
+		"~/Library/CloudStorage/Dropbox/backup",
+		filepath.Join(home, "Documents"),
+		"~/Desktop/backup",
+		"~/Downloads",
+		"/Volumes/Disco esterno/The Vault",
+	} {
+		if BlockedBackupLocation(dir) == "" {
+			t.Errorf("%s should be refused", dir)
+		}
+	}
+	for _, dir := range []string{
+		"~/The Vault Backup",
+		filepath.Join(home, "Library", "Application Support", "TheVaultServer", "backups"),
+		filepath.Join(home, "DocumentsOld"),
+		"/Users/Shared/The Vault",
+	} {
+		if where := BlockedBackupLocation(dir); where != "" {
+			t.Errorf("%s refused as %q", dir, where)
+		}
+	}
+}
+
+func TestWizardRefusesICloudBackupFolder(t *testing.T) {
+	// email, provider (iCloud), sender, backup folder in iCloud Drive (refused), then the proposed one
+	w, out, _ := newTestWizard(t, "me@icloud.com\n\n\n~/Library/Mobile Documents/com~apple~CloudDocs/Backup\n\n", nil)
+	if err := w.Run(); err != nil {
+		t.Fatalf("wizard: %v\n%s", err, out)
+	}
+	cfg, err := config.Load(w.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Backup.Dir != defaultBackupDir() {
+		t.Errorf("backup folder: %s", cfg.Backup.Dir)
+	}
+	if !strings.Contains(out.String(), "iCloud Drive: macOS non lascerebbe") {
+		t.Errorf("no explanation:\n%s", out)
 	}
 }

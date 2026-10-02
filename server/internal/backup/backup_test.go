@@ -84,3 +84,40 @@ func TestNextRun(t *testing.T) {
 		t.Fatalf("next day: %v", n)
 	}
 }
+
+func TestRunAndRecordKeepsTheOutcome(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	cfg := config.Default(dir)
+	cfg.Backup.Dir = filepath.Join(t.TempDir(), "backups")
+	st, err := store.Open(filepath.Join(dir, "thevault.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if s := ReadStatus(cfg); s.LastAttempt != 0 {
+		t.Fatalf("status before any backup: %+v", s)
+	}
+	snap, err := RunAndRecord(ctx, cfg, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok := ReadStatus(cfg)
+	if ok.LastSuccess == 0 || ok.LastSuccess != ok.LastAttempt || ok.LastDir != snap || ok.LastError != "" {
+		t.Fatalf("after a good backup: %+v", ok)
+	}
+	// A folder that cannot be written (here: a file where the folder should be) is recorded as a failure,
+	// and the last good backup is still known.
+	blocker := filepath.Join(t.TempDir(), "not-a-folder")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Backup.Dir = blocker
+	if _, err := RunAndRecord(ctx, cfg, st); err == nil {
+		t.Fatal("backup into a file should fail")
+	}
+	bad := ReadStatus(cfg)
+	if bad.LastError == "" || bad.LastSuccess != ok.LastSuccess || bad.LastAttempt < ok.LastAttempt {
+		t.Fatalf("after a failed backup: %+v", bad)
+	}
+}

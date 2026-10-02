@@ -2,6 +2,7 @@ package setup
 
 import (
 	"bytes"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -170,6 +171,46 @@ func WaitHealthy(cfg *config.Config) error {
 		time.Sleep(500 * time.Millisecond)
 	}
 	return last
+}
+
+// Upgrade replaces the installed program with this one and restarts the service; data and settings stay.
+// It returns once the new version answers.
+func Upgrade(cfg *config.Config, version string) error {
+	if err := InstallService(cfg); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		running, err := runningVersion(localURL(cfg))
+		if err == nil && running == version {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("il server non risponde dopo l'aggiornamento: %w (registro: %s)", err, LogPath(cfg.DataDir))
+			}
+			return fmt.Errorf("risponde ancora la versione %s invece della %s (registro: %s)", running, version, LogPath(cfg.DataDir))
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// runningVersion asks the server at base which version it is.
+func runningVersion(base string) (string, error) {
+	c := &http.Client{Timeout: 5 * time.Second}
+	resp, err := c.Get(strings.TrimRight(base, "/") + "/v1/health")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var h struct {
+		Service string `json:"service"`
+		Version string `json:"version"`
+	}
+	if resp.StatusCode != 200 || json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&h) != nil || h.Service != "thevault" {
+		return "", fmt.Errorf("risposta inattesa (%d)", resp.StatusCode)
+	}
+	return h.Version, nil
 }
 
 func checkHealth(base string) error {

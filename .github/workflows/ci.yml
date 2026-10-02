@@ -26,6 +26,8 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
       - run: go test -race -count=1 ./...
       - name: Cross-compile for the Mac mini (darwin/arm64)

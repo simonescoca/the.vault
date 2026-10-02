@@ -4,6 +4,7 @@
 //	thevault-server serve     run the server (used by the background service)
 //	thevault-server status    show whether the server is running and reachable
 //	thevault-server backup    make a backup now
+//	thevault-server upgrade   install this program over the running one (backup first), keeping the settings
 //	thevault-server version   print the version
 package main
 
@@ -54,6 +55,8 @@ func main() {
 		err = runBackup(*dataDir)
 	case "uninstall":
 		err = setup.Uninstall(*dataDir)
+	case "upgrade":
+		err = upgrade(*dataDir)
 	case "version", "--version", "-v":
 		fmt.Println("thevault-server", version)
 	case "help", "--help", "-h":
@@ -77,6 +80,7 @@ Uso: thevault-server <comando> [--data cartella]
   serve      avvia il server (lo usa il servizio in background)
   status     mostra se il server è attivo e raggiungibile
   backup     esegue subito un backup
+  upgrade    installa questa versione al posto di quella attiva (con backup prima)
   uninstall  rimuove l'avvio automatico (i dati restano)
   version    mostra la versione
 `, version)
@@ -144,6 +148,30 @@ func serve(dataDir string) error {
 	return nil
 }
 
+// exitNotConfigured tells the install script to run the setup instead of an upgrade.
+const exitNotConfigured = 3
+
+func upgrade(dataDir string) error {
+	cfg, err := config.Load(dataDir)
+	if errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintln(os.Stderr, "Il server non è ancora configurato: esegui 'thevault-server setup'.")
+		os.Exit(exitNotConfigured)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Println("Backup di sicurezza prima dell'aggiornamento…")
+	if err := runBackup(dataDir); err != nil {
+		return fmt.Errorf("backup non riuscito, aggiornamento annullato: %w", err)
+	}
+	fmt.Printf("Installo la versione %s…\n", version)
+	if err := setup.Upgrade(cfg, version); err != nil {
+		return err
+	}
+	fmt.Printf("✓ Server aggiornato alla versione %s e di nuovo attivo.\n", version)
+	return nil
+}
+
 func runBackup(dataDir string) error {
 	cfg, err := config.Load(dataDir)
 	if err != nil {
@@ -154,7 +182,7 @@ func runBackup(dataDir string) error {
 		return err
 	}
 	defer st.Close()
-	dir, err := backup.Run(context.Background(), cfg, st)
+	dir, err := backup.RunAndRecord(context.Background(), cfg, st)
 	if err != nil {
 		return err
 	}

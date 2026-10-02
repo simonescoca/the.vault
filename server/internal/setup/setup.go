@@ -143,19 +143,29 @@ func (w *Wizard) Run() error {
 	// 3. Backups
 	w.say("3/5  Backup automatici")
 	w.say("     Ogni notte il server salva una copia dei dati (già cifrati: nessuno può leggerli).")
-	w.say("     Puoi tenerli su iCloud Drive o su un disco esterno.")
+	w.say("     Lascia la cartella proposta: macOS non permette ai servizi in background di scrivere su")
+	w.say("     iCloud Drive, Scrivania, Documenti, Download o dischi esterni. Per avere una copia anche")
+	w.say("     fuori dal Mac mini, attiva Time Machine: copierà anche questa cartella.")
 	defDir := cfg.Backup.Dir
-	if defDir == "" {
-		defDir = defaultBackupDir(w.DataDir)
+	if defDir == "" || BlockedBackupLocation(defDir) != "" {
+		defDir = defaultBackupDir()
 	}
-	dir, err := w.ask("     Cartella dei backup", defDir)
-	if err != nil {
-		return err
-	}
-	cfg.Backup.Dir = expandHome(dir)
-	if err := os.MkdirAll(cfg.Backup.Dir, 0o700); err != nil {
-		w.say("     ⚠ Non riesco a creare la cartella (%v): uso quella predefinita.", err)
-		cfg.Backup.Dir = filepath.Join(w.DataDir, "backups")
+	for {
+		dir, err := w.ask("     Cartella dei backup", defDir)
+		if err != nil {
+			return err
+		}
+		dir = expandHome(dir)
+		if where := BlockedBackupLocation(dir); where != "" {
+			w.say("     ⚠ %s: macOS non lascerebbe scrivere lì il server in background. Scegli un'altra cartella.", where)
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			w.say("     ⚠ Non riesco a creare la cartella (%v). Scegline un'altra.", err)
+			continue
+		}
+		cfg.Backup.Dir = dir
+		break
 	}
 	w.say("")
 
@@ -297,13 +307,37 @@ func (w *Wizard) configureMail(cfg *config.Config) error {
 	return nil
 }
 
-func defaultBackupDir(dataDir string) string {
+// defaultBackupDir is a visible folder in the home folder, where a background service may write.
+func defaultBackupDir() string {
 	home, _ := os.UserHomeDir()
-	icloud := filepath.Join(home, "Library", "Mobile Documents", "com~apple~CloudDocs")
-	if st, err := os.Stat(icloud); err == nil && st.IsDir() {
-		return filepath.Join(icloud, "The Vault Backup")
+	return filepath.Join(home, "The Vault Backup")
+}
+
+// BlockedBackupLocation names the place if dir is somewhere macOS does not let a background service (the
+// LaunchAgent) write without a permission it cannot ask for: iCloud Drive and other cloud folders, Desktop,
+// Documents, Downloads, external and network disks. Empty if dir is fine.
+func BlockedBackupLocation(dir string) string {
+	home, _ := os.UserHomeDir()
+	clean := filepath.Clean(expandHome(dir))
+	within := func(base string) bool {
+		rel, err := filepath.Rel(base, clean)
+		return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 	}
-	return filepath.Join(dataDir, "backups")
+	switch {
+	case within(filepath.Join(home, "Library", "Mobile Documents")):
+		return "iCloud Drive"
+	case within(filepath.Join(home, "Library", "CloudStorage")):
+		return "Una cartella cloud (Dropbox, OneDrive, Google Drive…)"
+	case within(filepath.Join(home, "Desktop")):
+		return "La Scrivania"
+	case within(filepath.Join(home, "Documents")):
+		return "La cartella Documenti"
+	case within(filepath.Join(home, "Downloads")):
+		return "La cartella Download"
+	case within("/Volumes"):
+		return "Un disco esterno o di rete"
+	}
+	return ""
 }
 
 func expandHome(p string) string {
