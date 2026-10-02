@@ -122,6 +122,13 @@ jobs:
         run: |
           APP="build/macos/Build/Products/Release/The Vault.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
+          # A published app must not carry the debugging entitlement: it would let other programs read its memory.
+          codesign -d --entitlements - --xml "$APP" > entitlements.xml
+          cat entitlements.xml
+          if grep -q "get-task-allow" entitlements.xml; then
+            echo "::error::get-task-allow found in the release build"
+            exit 1
+          fi
           lipo -archs "$APP/Contents/MacOS/The Vault"
           mkdir -p dmg dist
           cp -R "$APP" dmg/

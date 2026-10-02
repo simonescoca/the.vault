@@ -502,6 +502,18 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
   Microsoft: una definizione nel progetto Windows (`_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS`) prima di
   compilare i componenti. Da tenere d'occhio: quando il componente verrà aggiornato, la riga si potrà togliere.
 - **Secondo giro della CI: tutto ✅** — server, 60 test dell'app, compilazione **Mac** e compilazione **Windows**.
+- **Pubblicata la versione 1.0.0** (con il tuo ok): lavoro unito nel ramo principale; la creazione del "tag" `v1.0.0`
+  da qui era vietata (errore 403 sui tag, i rami invece passano), quindi ho avviato a mano il rilascio su GitHub, che
+  crea la versione da sé. Tutti i passaggi verdi; nella pagina Releases ci sono i 6 file e le istruzioni.
+- **Controllo dei file pubblicati** (scaricati davvero dalla pagina Releases): impronte tutte corrette; lo script del
+  server scarica e verifica il file giusto; nel `.dmg` c'è "The Vault" 1.0.0, unico programma per Apple Silicon e Intel,
+  italiano/inglese, icona, permessi giusti; l'installer Windows installa app, componenti e librerie Microsoft con
+  nome e versione corretti, e con Wine **l'app Windows si avvia** (finestra "The Vault" aperta e centrata; il contenuto
+  resta bianco solo perché Wine non sa tradurre un'istruzione grafica di Flutter: limite di Wine, non dell'app).
+- 🔴→🟢 *Trovato nel controllo*: nella firma dell'app Mac Xcode aveva aggiunto da solo il permesso di sviluppo
+  `get-task-allow`, che permetterebbe a un altro programma del Mac di leggere la memoria di The Vault (con la chiave della
+  cassaforte aperta) senza essere amministratore. Tolto per le versioni pubblicate, e il rilascio ora si ferma da solo
+  se ricompare. → **versione 1.0.1**.
 
 ---
 
