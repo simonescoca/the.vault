@@ -55,6 +55,9 @@ add_subdirectory("runner")
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
+# local_auth_windows (Windows Hello) still builds its coroutines with /await, which recent Visual Studio
+# versions refuse (error STL1011) unless this is defined.
+add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
 include(flutter/generated_plugins.cmake)
 
 
