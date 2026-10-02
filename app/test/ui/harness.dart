@@ -44,12 +44,16 @@ class FakePlatform implements PlatformServices {
     return true;
   }
 
+  /// What the "choose files" dialog returns, and where "save a copy" writes.
+  List<File> filesToPick = const [];
+  String? saveTo;
+
   @override
-  Future<List<File>> pickFiles() async => const [];
+  Future<List<File>> pickFiles() async => filesToPick;
   @override
   Future<String?> pickFile({List<String>? extensions}) async => null;
   @override
-  Future<String?> saveFileDialog(String suggestedName, {List<String>? extensions}) async => null;
+  Future<String?> saveFileDialog(String suggestedName, {List<String>? extensions}) async => saveTo;
   @override
   Future<void> setClipboard(String text) async => clipboard = text;
   @override

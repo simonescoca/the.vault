@@ -43,12 +43,15 @@ class DetailEditState extends State<DetailEdit> {
   @override
   void initState() {
     super.initState();
+    // Controllers also notify when only the cursor moves (e.g. a field gets the focus): only text changes count.
     _title.addListener(() {
+      if (d.title == _title.text) return;
       d.title = _title.text;
       if (titleError && _title.text.trim().isNotEmpty) setState(() => titleError = false);
       _changed();
     });
     _desc.addListener(() {
+      if (d.description == _desc.text) return;
       d.description = _desc.text;
       _changed();
     });
@@ -63,13 +66,17 @@ class DetailEditState extends State<DetailEdit> {
     return _rows.putIfAbsent(f.id, () {
       final k = TextEditingController(text: f.key)
         ..addListener(() {
-          f.key = _rows[f.id]!.$1.text;
+          final text = _rows[f.id]!.$1.text;
+          if (f.key == text) return;
+          f.key = text;
           _changed();
         });
       final v = TextEditingController(text: f.value)
         ..addListener(() {
+          final text = _rows[f.id]!.$2.text;
+          if (f.value == text) return;
           final before = d.titleSuggestion;
-          f.value = _rows[f.id]!.$2.text;
+          f.value = text;
           _changed();
           if (before != d.titleSuggestion) setState(() {});
         });

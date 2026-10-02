@@ -55,13 +55,28 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _homeFocus.requestFocus();
     });
+    FocusManager.instance.addListener(_keepKeyboard);
     _notices = home.vault.notices.listen((n) {
       if (n == VaultNotice.conflictCopy && mounted) context.toasts.show(context.l.conflictCopyNotice, duration: const Duration(seconds: 5));
     });
   }
 
+  /// When the focused field goes away (a click elsewhere, the editor closing…) the keyboard would land outside
+  /// the main window and the shortcuts would stop working: give it back to the window.
+  void _keepKeyboard() {
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary != null && primary is! FocusScopeNode) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final p = FocusManager.instance.primaryFocus;
+      if (mounted && (p == null || p is FocusScopeNode) && (ModalRoute.of(context)?.isCurrent ?? false)) {
+        _homeFocus.requestFocus();
+      }
+    });
+  }
+
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_keepKeyboard);
     _approvals?.cancel();
     _notices?.cancel();
     _menu?.cancel();

@@ -98,7 +98,7 @@ void main() {
     for (final i in items) {
       s.vault.save(i);
     }
-    final old = item('Vecchio forum', [('utente', 'simo85', hidden: false, link: null)]);
+    final old = item('Vecchio forum', [('utente', 'mario80', hidden: false, link: null)]);
     s.vault.save(old);
     s.vault.moveToTrash(old.id);
     await s.sync.sync();
