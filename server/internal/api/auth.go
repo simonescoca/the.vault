@@ -48,19 +48,21 @@ func (s *Server) otpRequest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_email", "invalid email address")
 		return
 	}
-	if ok, wait := s.otpPerIP.Allow(clientIP(r)); !ok {
-		tooMany(w, wait)
-		return
-	}
-	if o, err := s.Store.GetOTP(r.Context(), email); err == nil {
-		if since := time.Duration(nowMs()-o.SentAt) * time.Millisecond; since < otpResendDelay {
-			tooMany(w, otpResendDelay-since)
+	if !s.Cfg.TestMode {
+		if ok, wait := s.otpPerIP.Allow(clientIP(r)); !ok {
+			tooMany(w, wait)
 			return
 		}
-	}
-	if ok, wait := s.otpPerEmail.Allow(email); !ok {
-		tooMany(w, wait)
-		return
+		if o, err := s.Store.GetOTP(r.Context(), email); err == nil {
+			if since := time.Duration(nowMs()-o.SentAt) * time.Millisecond; since < otpResendDelay {
+				tooMany(w, otpResendDelay-since)
+				return
+			}
+		}
+		if ok, wait := s.otpPerEmail.Allow(email); !ok {
+			tooMany(w, wait)
+			return
+		}
 	}
 	code := newOTPCode()
 	mac := s.otpMAC(email, code)
@@ -108,7 +110,7 @@ func (s *Server) otpVerify(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, maxJSONBody, &req) {
 		return
 	}
-	if ok, wait := s.verifyPerIP.Allow(clientIP(r)); !ok {
+	if ok, wait := s.verifyPerIP.Allow(clientIP(r)); !ok && !s.Cfg.TestMode {
 		tooMany(w, wait)
 		return
 	}

@@ -124,12 +124,12 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T2.8** Installazione guidata su macOS (configurazione, avvio automatico, stato, aggiornamento)
 
 ### Fase 3 — Cuore dell'app (logica, senza grafica)
-- [ ] **T3.1** Crittografia: chiavi, cifratura di voci e file, sigilli per l'approvazione, codice di emergenza
-- [ ] **T3.2** Modello dati (voce, righe, link, allegati) e regole di salvataggio
-- [ ] **T3.3** Archivio locale cifrato (funzionamento offline)
-- [ ] **T3.4** Comunicazione con il server e motore di sincronizzazione, con gestione dei conflitti
-- [ ] **T3.5** Flussi account: primo accesso, nuovo dispositivo, approvazione, kit di emergenza, disconnessione
-- [ ] **T3.6** Test integrati: app ↔ server reale, più dispositivi simulati
+- [x] **T3.1** Crittografia: chiavi, cifratura di voci e file, sigilli per l'approvazione, codice di emergenza
+- [x] **T3.2** Modello dati (voce, righe, link, allegati) e regole di salvataggio
+- [x] **T3.3** Archivio locale cifrato (funzionamento offline)
+- [x] **T3.4** Comunicazione con il server e motore di sincronizzazione, con gestione dei conflitti
+- [x] **T3.5** Flussi account: primo accesso, nuovo dispositivo, approvazione, kit di emergenza, disconnessione
+- [x] **T3.6** Test integrati: app ↔ server reale, più dispositivi simulati
 
 ### Fase 4 — Interfaccia
 - [ ] **T4.1** Tema chiaro/scuro, font, lingua IT/EN, componenti di base
@@ -261,3 +261,39 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
     iCloud. Il codice è pronto e testato con simulazioni; la prova reale sarà nella guida passo passo.
 - **Test dopo la Fase 2**: `scripts/test-all.sh` → ✅ (server: 6 pacchetti di test verdi, con controllo delle "race";
   app: 3 test verdi).
+
+- **Fase 3 ✅ Cuore dell'app** (Dart/Flutter, cartella `app/lib/src/core/`), senza grafica ma completo:
+  - **T3.1 Crittografia** (libsodium): cifratura delle voci legata al loro identificativo e con lunghezza mascherata;
+    kit di emergenza (Argon2id, calcolato in sottofondo per non bloccare l'app); impegno + codice di 6 cifre +
+    consegna autenticata della chiave per l'approvazione; PIN; allegati cifrati a flusso. **14 test** verdi.
+    - 🟢 *Falso allarme*: leggendo la libreria temevo che i file di dimensione esattamente multipla di 64 KB (o vuoti)
+      restassero senza "segnale di fine" e quindi illeggibili. Leggendo tutto il codice ho visto che la libreria
+      aggiunge da sola un blocco finale vuoto. L'ho comunque blindato con test su 0 byte, 64 KB−1, 64 KB, 64 KB+1… e su
+      file troncati (rifiutati).
+  - **T3.2 Modello e regole**: voce, righe (con occhio e link), allegati; **le tue regole di salvataggio** codificate e
+    testate una per una (suggerimento che diventa chiave, righe solo-chiave eliminate, almeno una riga in modifica,
+    titolo dal nome del sito…). Riconoscimento di indirizzi web ed email (`README.md` o `script.sh` non diventano link
+    per sbaglio), ricerca e ordinamento senza accenti, generatore di password. **13 test** verdi.
+    - 🟡 *Scivolone (risolto)*: un nome usato due volte nel codice (`isEmail`) impediva la compilazione. Rinominato.
+  - **T3.3 Archivio locale** (SQLite): copia cifrata dei dati + coda delle modifiche da inviare, con un contatore che
+    evita di perdere una modifica fatta mentre la precedente è in viaggio. **3 test** verdi.
+  - **T3.4 Server e sincronizzazione**: client delle API, canale in tempo reale con riconnessione automatica, motore di
+    sincronizzazione (invio, ricezione, allegati con ripresa e verifica, pulizia).
+    **Conflitti risolti senza perdere nulla**: se un dispositivo ha solo messo una stella o cambiato un occhio, le due
+    modifiche si **uniscono**; se entrambi hanno cambiato i contenuti, la tua versione diventa una copia
+    "(conflitto)".
+  - **T3.5 Flussi di accesso**: primo dispositivo, nuovo dispositivo con approvazione, codice di emergenza, nuovo kit,
+    uscita.
+  - **T3.6 Test end-to-end** con il **server vero** e 4 dispositivi simulati: creazione della cassaforte, approvazione con
+    codici identici sui due schermi, tempo reale (meno di 1 secondo), conflitti, unione, allegati, cestino, eliminazione
+    definitiva, codice di emergenza (anche sbagliato), revoca, intruso con la sola email bloccato. ✅ in 2 secondi.
+  - 🔴→🟢 *Scivoloni trovati dal test end-to-end (tutti risolti)*:
+    1. due scaricamenti dello stesso allegato potevano partire insieme e scrivere sullo stesso file → ora condividono un
+       solo scaricamento;
+    2. il canale in tempo reale, chiudendosi, provava a inviare un ultimo evento → ora tace dopo la chiusura;
+    3. la pulizia degli allegati poteva toccare il database già chiuso → ora si ferma e viene attesa;
+    4. il più subdolo: correggendo il punto 1 ho introdotto un'attesa **circolare** (un'operazione che aspettava sé
+       stessa) e il test si bloccava. Trovato con tracce passo-passo e corretto, con un commento nel codice perché non
+       si ripeta.
+  - Aggiunta al server una "modalità test" (solo per i test automatici) che toglie l'attesa di 30 secondi tra i codici.
+- **Test dopo la Fase 3**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti, app **34 test** (inclusi end-to-end).

@@ -49,6 +49,9 @@ type Config struct {
 	Backup       Backup `json:"backup"`
 	MaxBlobBytes int64  `json:"maxBlobBytes"`
 	LogLevel     string `json:"logLevel"`
+	// TestMode disables the resend delay and the per-email/IP limits of login codes.
+	// Only for automated tests: never enable it on a real server.
+	TestMode bool `json:"testMode,omitempty"`
 }
 
 // Default returns a configuration with sensible defaults for the given data directory.

@@ -54,6 +54,9 @@ type Server struct {
 }
 
 func New(cfg *config.Config, st *store.Store, sender mail.Sender, log *slog.Logger, version string) *Server {
+	if cfg.TestMode {
+		log.Warn("TEST MODE: login code limits are disabled")
+	}
 	return &Server{
 		Cfg:             cfg,
 		Store:           st,
