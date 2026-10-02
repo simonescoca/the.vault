@@ -147,10 +147,10 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
   (come su macOS di serie); i pulsanti si usano con mouse e scorciatoie.*
 
 ### Fase 5 — Integrazione con Mac e Windows
-- [ ] **T5.1** Touch ID / Windows Hello, con ripiego sul PIN
-- [ ] **T5.2** Custodia sicura delle chiavi (Portachiavi di macOS / protezione di Windows)
-- [ ] **T5.3** Finestra, icona dell'app, menu
-- [ ] **T5.4** Appunti con svuotamento automatico, apertura e salvataggio file, trascinamento
+- [x] **T5.1** Touch ID / Windows Hello, con ripiego sul PIN. *Da provare sui computer veri (Fase 8).*
+- [x] **T5.2** Custodia sicura delle chiavi (Portachiavi di macOS / protezione di Windows)
+- [x] **T5.3** Finestra, icona dell'app, menu
+- [x] **T5.4** Appunti con svuotamento automatico, apertura e salvataggio file, trascinamento
 
 ### Fase 6 — Pacchetti e rilascio
 - [ ] **T6.1** Build macOS (`.dmg`) con GitHub Actions
@@ -358,3 +358,49 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - **Test dopo la Fase 4**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti; app analyze 0 problemi, **46 test** verdi
   (+1 strumento di prova saltato di proposito).
 - **Push**: ancora ❌ (403). Tutto il lavoro è salvato in locale, in commit ordinati.
+
+- **Fase 5 ✅ Integrazione con Mac e Windows**:
+  - **Icona dell'app** disegnata con lo stesso quadrante del logo: piastra grafite con quadrante chiaro, in stile
+    macOS (con margine e ombra) e Windows (`.ico` con 8 misure). Alle misure piccole restano solo anello e tacca,
+    altrimenti le 12 tacche diventerebbero "rumore". Si rigenera con `scripts/make-icons.sh`.
+  - **Mac**: nome "The Vault", identificativo `it.simonescoca.thevault`, categoria "Produttività", lingue italiano e
+    inglese dichiarate (così anche i pannelli di sistema, per esempio "Salva", sono in italiano).
+    **Menu** in italiano su un Mac in italiano: *The Vault* (Informazioni, Impostazioni… ⌘,, Nascondi, Esci),
+    *Archivio* (Nuova voce ⌘N, Blocca ⌘L), *Composizione*, *Vista*, *Finestra*. Tolti i sottomenu da editor di testo
+    (Trova, Ortografia, Sostituzioni…) che l'app non usa e che "rubavano" ⌘F e ⌘E alla ricerca e alla modifica.
+  - **Windows**: programma `TheVault.exe` con nome, versione e copyright nelle proprietà; titolo "The Vault";
+    **una sola copia aperta**: se la riapri, torna in primo piano quella già aperta (due copie userebbero gli stessi
+    dati locali).
+  - **Portachiavi**: tutti i segreti in **un'unica voce**. Senza firma Apple ufficiale, macOS dopo ogni aggiornamento
+    chiede la password del Mac per ogni voce: prima sarebbero state 6 domande, ora una sola.
+  - **Appunti privati**: su Mac i valori copiati sono "nascosti" ai gestori di appunti e non passano all'iPhone con gli
+    Appunti universali; su Windows restano fuori dalla cronologia (Win+V) e dagli appunti nel cloud.
+  - **Finestra**: ricorda posizione e dimensione; se lo schermo dove stava non c'è più (monitor esterno staccato),
+    si riapre al centro invece che fuori dallo schermo.
+  - ⌘L / Ctrl+L blocca da qualsiasi punto, anche con una finestra di dialogo aperta.
+  - 🔴→🟢 *Problemi seri trovati e risolti*:
+    1. **l'app Mac non si sarebbe collegata al server**: il progetto aveva ancora le impostazioni di partenza, con la
+       "sandbox" di Apple attiva e senza permesso di rete. Ora niente sandbox (serve solo per l'App Store) e permesso di
+       rete dichiarato;
+    2. **sicurezza: al blocco le finestre di dialogo restavano sopra la schermata di blocco** (impostazioni,
+       approvazione di un nuovo dispositivo, nuovo kit di emergenza): qualcuno al computer bloccato avrebbe potuto
+       vederle o usarle. Ora al blocco si chiude tutto. Con test automatico;
+    3. **la compilazione da zero (per esempio su GitHub) sarebbe fallita**: era dichiarata una cartella di icone vuota,
+       che git non salva. Ora contiene l'icona.
+  - 🟡 *Scivoloni miei (risolti)*: 
+    1. nel codice che chiude i dialoghi al blocco avevo memorizzato lo "stato precedente" in modo pigro: veniva letto
+       per la prima volta proprio durante il blocco, quando era già cambiato, e quindi non chiudeva nulla. L'ha trovato
+       il test;
+    2. aggiungendo una libreria ho scritto una versione vuota nel file delle dipendenze; me ne sono accorto subito
+       perché l'aggiornamento delle librerie falliva.
+  - ✅ *Verifiche del codice Windows senza un PC Windows*: ho installato un compilatore Windows e **Wine** (che fa girare
+    i programmi Windows su Linux) con la versione Windows di Dart. Risultati: il codice degli appunti privati funziona
+    davvero (testo con accenti ed emoji intatto, i tre marcatori di privacy presenti); la "copia unica" funziona (la
+    seconda apertura riporta in primo piano la prima e si chiude); `main.cpp` compila.
+  - ⚠️ *Non verificabile qui*: il codice Swift del Mac (menu e appunti) non si può compilare senza un Mac. L'ho scritto
+    controllando ogni funzione sul codice sorgente di Flutter; lo verificherà la compilazione automatica su GitHub (CI)
+    appena il push funzionerà.
+  - 🔒 *Privacy*: nei dati dimostrativi c'erano un codice fiscale inventato a partire dal tuo nome, il cognome nel nome
+    del Wi-Fi e il tuo nome utente: sostituiti con i classici dati d'esempio di "Mario Rossi".
+- **Test dopo la Fase 5**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti; app analyze 0 problemi, **52 test** verdi
+  (+2 strumenti saltati di proposito). App vera su Linux: Ctrl+L dentro le Impostazioni → bloccata e finestra chiusa.
