@@ -446,6 +446,13 @@ func TestApprovalExpiryAndClaim(t *testing.T) {
 	if got := d2.must(200, "GET", "/v1/approvals/"+id, nil); got["state"] != "expired" {
 		t.Fatalf("expected expired: %v", got)
 	}
+	// An abandoned sign-in (never approved) disappears after a day; active devices stay.
+	store.NowMillis = func() int64 { return base + 25*3600_000 }
+	e.srv.MaintenanceOnce(context.Background())
+	if code, _ := d2.req("GET", "/v1/me", nil); code != 401 {
+		t.Fatalf("abandoned pending device must be removed: %d", code)
+	}
+	d1.must(200, "GET", "/v1/me", nil)
 }
 
 func TestRecoveryActivation(t *testing.T) {

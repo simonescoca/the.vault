@@ -203,6 +203,26 @@ func (s *Store) DeleteDevice(ctx context.Context, id string) error {
 	return err
 }
 
+// AbandonedDevices deletes devices that never got access (setup/pending) created before the given time,
+// and returns them.
+func (s *Store) AbandonedDevices(ctx context.Context, before int64) ([]*Device, error) {
+	rows, err := s.DB.QueryContext(ctx, `DELETE FROM devices WHERE status IN (?, ?) AND created_at < ? RETURNING `+deviceCols,
+		StatusSetup, StatusPending, before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Device
+	for rows.Next() {
+		d, err := scanDevice(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // TouchDevice updates last_seen_at if it is older than one minute.
 func (s *Store) TouchDevice(ctx context.Context, id string) error {
 	now := NowMillis()
