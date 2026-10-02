@@ -132,18 +132,19 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T3.6** Test integrati: app ↔ server reale, più dispositivi simulati
 
 ### Fase 4 — Interfaccia
-- [ ] **T4.1** Tema chiaro/scuro, font, lingua IT/EN, componenti di base
-- [ ] **T4.2** Primo avvio: server, email, codice, kit di emergenza, PIN, Touch ID / Windows Hello
-- [ ] **T4.3** Schermata di blocco e blocco automatico
-- [ ] **T4.4** Finestra a tre colonne: menu, elenco con ricerca, dettaglio
-- [ ] **T4.5** Dettaglio voce: righe affiancate, link, occhio, copia, allegati, descrizione
-- [ ] **T4.6** Creazione e modifica: suggerimenti, aggiungi/rimuovi/riordina righe, link su testo, generatore, allegati
-- [ ] **T4.7** Preferiti e Cestino (ripristina, elimina per sempre, svuota)
-- [ ] **T4.8** Icone dei siti con ripiego sull'iniziale
-- [ ] **T4.9** Impostazioni: aspetto, lingua, sicurezza, dispositivi, esporta/importa, kit di emergenza
-- [ ] **T4.10** Approvazione di un nuovo dispositivo (finestra di conferma con codice di verifica)
-- [ ] **T4.11** Stato della sincronizzazione, modalità offline, conflitti
-- [ ] **T4.12** Scorciatoie da tastiera, animazioni, rifiniture e accessibilità
+- [x] **T4.1** Tema chiaro/scuro, font, lingua IT/EN, componenti di base
+- [x] **T4.2** Primo avvio: server, email, codice, kit di emergenza, PIN, Touch ID / Windows Hello
+- [x] **T4.3** Schermata di blocco e blocco automatico
+- [x] **T4.4** Finestra a tre colonne: menu, elenco con ricerca, dettaglio
+- [x] **T4.5** Dettaglio voce: righe affiancate, link, occhio, copia, allegati, descrizione
+- [x] **T4.6** Creazione e modifica: suggerimenti, aggiungi/rimuovi/riordina righe, link su testo, generatore, allegati
+- [x] **T4.7** Preferiti e Cestino (ripristina, elimina per sempre, svuota)
+- [x] **T4.8** Icone dei siti con ripiego sull'iniziale
+- [x] **T4.9** Impostazioni: aspetto, lingua, sicurezza, dispositivi, esporta/importa, kit di emergenza
+- [x] **T4.10** Approvazione di un nuovo dispositivo (finestra di conferma con codice di verifica)
+- [x] **T4.11** Stato della sincronizzazione, modalità offline, conflitti
+- [x] **T4.12** Scorciatoie da tastiera, animazioni, rifiniture e accessibilità. *Il tasto Tab si muove tra i campi di testo
+  (come su macOS di serie); i pulsanti si usano con mouse e scorciatoie.*
 
 ### Fase 5 — Integrazione con Mac e Windows
 - [ ] **T5.1** Touch ID / Windows Hello, con ripiego sul PIN
@@ -297,3 +298,63 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
        si ripeta.
   - Aggiunta al server una "modalità test" (solo per i test automatici) che toglie l'attesa di 30 secondi tra i codici.
 - **Test dopo la Fase 3**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti, app **34 test** (inclusi end-to-end).
+
+- **Fase 4 ✅ Interfaccia** (cartella `app/lib/src/ui/`). Provata **sull'app vera** (versione Linux su uno schermo
+  virtuale, comandata come farebbe una persona: clic, tastiera, screenshot) e con **test automatici dell'interfaccia**.
+  - **T4.1** Tema monocromatico chiaro/scuro che segue il sistema, Geist / Geist Mono, icone Lucide sottili,
+    225 testi in italiano e inglese, componenti comuni (pulsanti, campi, finestre, avvisi in basso, codice a 6 caselle).
+  - **T4.2** Primo avvio completo, provato contro il server vero: benvenuto → indirizzo del server → email → codice →
+    **kit di emergenza in PDF** → PIN → cassaforte vuota. Touch ID / Windows Hello si attiva dopo il PIN (prova reale
+    sui computer veri nella Fase 5).
+  - **T4.3** Blocco: PIN a 6 cifre con attese crescenti dopo 5 errori e cancellazione dei dati locali al 10°;
+    blocco automatico per inattività e quando il computer va in stop; ⌘L / Ctrl+L.
+  - **T4.4–T4.8** Tre colonne (Tutte / Preferiti / Cestino, elenco con ricerca senza accenti, dettaglio); righe
+    affiancate; clic = copia; indirizzi e "testo con link" che aprono il browser; email mai link; occhio che si salva;
+    descrizione e allegati nascosti se vuoti; modifica con le 3 righe suggerite, trascinamento per riordinare, link,
+    generatore di password, allegati anche trascinando i file; cestino con "Annulla", ripristino, eliminazione definitiva
+    e "Svuota cestino" con conferma; icone dei siti (scaricate direttamente dal sito) con ripiego sull'iniziale.
+  - **T4.9** Impostazioni: aspetto, lingua, blocco automatico, svuotamento appunti, cambio PIN, Touch ID, dispositivi
+    (rinomina, scollega), esporta/importa in file cifrato, nuovo kit di emergenza.
+  - **T4.10** Approvazione provata con **due app vere** collegate allo stesso server: lo stesso codice (922 877) appare sui
+    due schermi, l'approvazione passa e arriva anche l'email di avviso.
+  - **T4.11** Sincronizzazione in tempo reale tra le due app: una modifica compare sull'altra in meno di 2 secondi.
+    Stato "Sincronizzato / Offline" in basso a sinistra; avviso se si crea una copia "(conflitto)"; se modifichi una voce
+    cambiata nel frattempo altrove, l'app chiede se sovrascrivere o tenere entrambe.
+  - **T4.12** Scorciatoie (⌘N nuova, ⌘F cerca, ⌘E modifica, ⌘S salva, Esc annulla, ⌘⌫ cestino, frecce per scorrere
+    l'elenco, ⌘, impostazioni), animazioni brevi.
+  - **Test automatici dell'interfaccia**: **13 test** che aprono l'app vera (senza server) e la usano: nuova voce con le tue
+    regole, titolo obbligatorio, almeno una riga, occhio, copia, link, email, cestino, ricerca, preferiti, tastiera, blocco
+    con PIN, descrizione/allegati, inglese, chiaro/scuro.
+  - 🔴→🟢 *Scivoloni trovati provando l'app vera (tutti risolti)*:
+    1. schermata rossa d'errore all'apertura della cassaforte: un componente leggeva la lingua troppo presto;
+    2. ⌘N non funzionava subito dopo lo sblocco: la tastiera non era "agganciata" alla finestra principale;
+    3. la finestra di approvazione restava ferma per lo stesso motivo del punto 1;
+    4. la scheda "Dispositivi" delle impostazioni andava in errore (un aggiornamento dello schermo scritto male);
+    5. la stella dei preferiti non si riempiva;
+    6. una richiesta di accesso abbandonata (dispositivo che non completa mai il login) restava per sempre nell'elenco
+       dei dispositivi: ora il server la toglie dopo 24 ore (con test);
+    7. la libreria per scegliere i file ha cambiato modo d'uso nella versione 13: adattato.
+  - 🔴→🟢 *Scivoloni trovati dai test automatici dell'interfaccia (tutti risolti)*:
+    1. **dopo il blocco (⌘L o automatico) il PIN non si poteva digitare subito**: bisognava prima cliccare sulle caselle.
+       Lo stesso dopo un PIN sbagliato o un codice email sbagliato. Ora la tastiera torna sempre al posto giusto;
+       verificato anche sull'app vera;
+    2. **il tasto Tab si "perdeva"** nel modulo di modifica: dopo la chiave si fermava su un elemento invisibile, quindi
+       il testo digitato non finiva da nessuna parte. Ora Tab va titolo → chiave → valore → riga successiva;
+    3. con testi lunghi (per esempio in un'altra lingua) i pulsanti delle finestre di conferma potevano uscire dal
+       bordo: ora, se non ci stanno, si dispongono uno sotto l'altro;
+    4. con la lingua "Sistema", cambiando la lingua del computer ad app aperta l'app non si aggiornava: ora sì.
+  - 🟡 *Scivoloni miei nei test (risolti)*: un import mancante; test che cercavano un testo presente due volte (l'email
+    sia nell'elenco sia nel dettaglio); un test che si aspettava "email" diversa in inglese (è uguale!); i test usavano
+    un font "finto" che rende i testi più larghi del vero → ora caricano Geist come l'app.
+  - 📝 *Deciso io*: se associ **di proposito** un link a una riga che contiene un'email, vale il link che hai scelto;
+    senza link un'email resta sempre e solo da copiare (`SPEC.md` aggiornato).
+  - 🟢 *Falso allarme*: con la digitazione "robotica" (lettere a pochi millesimi di secondo dal Tab) le ultime lettere a
+    volte si perdevano. Con una pausa umana arrivano tutte: è un limite del modo in cui simulo la tastiera, non dell'app.
+  - 🔒 *Pulizia privacy*: nei dati di prova c'era la tua email vera; la repo è pubblica, quindi l'ho sostituita con
+    un'email d'esempio (anche nella cronologia non ancora pubblicata). 🟡 *Scivolone (risolto)*: la prima sostituzione
+    aveva mancato una variante con le maiuscole usata dal test dell'installazione guidata; il test l'ha segnalato subito.
+  - ⚠️ *Da verificare su Mac e Windows veri*: aspetto finale della finestra, Touch ID / Windows Hello, portachiavi
+    (Fase 5).
+- **Test dopo la Fase 4**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti; app analyze 0 problemi, **46 test** verdi
+  (+1 strumento di prova saltato di proposito).
+- **Push**: ancora ❌ (403). Tutto il lavoro è salvato in locale, in commit ordinati.
