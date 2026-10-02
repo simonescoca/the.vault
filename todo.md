@@ -161,8 +161,8 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
   quando il push funziona.*
 
 ### Fase 7 — Guide (in italiano, passo passo)
-- [ ] **T7.1** Installare il server sul Mac mini (email, accesso da fuori casa, backup)
-- [ ] **T7.2** Installare l'app su Mac e Windows e primo utilizzo
+- [x] **T7.1** Installare il server sul Mac mini (email, accesso da fuori casa, backup) → [`docs/guida-server.md`](docs/guida-server.md)
+- [x] **T7.2** Installare l'app su Mac e Windows e primo utilizzo → [`docs/guida-app.md`](docs/guida-app.md)
 
 ### Fase 8 — Collaudo finale
 - [ ] **T8.1** Test completi da capo a fondo (più dispositivi, offline, conflitti, allegati)
@@ -436,3 +436,22 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
     `actionlint` e degli script con `shellcheck`.
 - **Test dopo la Fase 6**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti (+3 test nuovi); app analyze 0 problemi,
   52 test verdi.
+
+- **Fase 7 ✅ Guide in italiano** (collegate dal `README.md` e dalle note di ogni release):
+  - [`docs/guida-server.md`](docs/guida-server.md): preparare il Mac mini (niente stop, riavvio dopo un blackout, la
+    scelta tra FileVault e accesso automatico spiegata con pro e contro), password per le app di iCloud, Tailscale, il
+    comando di installazione, i 5 passi della configurazione uno per uno, come leggere `thevault-server status` (esempio
+    preso dall'output vero), aggiornamenti, backup e Time Machine, problemi comuni.
+  - [`docs/guida-app.md`](docs/guida-app.md): download, installazione su Mac («Apri comunque») e Windows («Esegui
+    comunque»), primo computer con il kit di emergenza, secondo computer con l'approvazione a codice, uso quotidiano,
+    scorciatoie, impostazioni, aggiornamenti, problemi comuni. Ogni etichetta citata è controllata sui testi veri
+    dell'app.
+  - 🟡 *Scivoloni trovati scrivendo le guide (risolti)*:
+    1. il server suggeriva di scrivere `thevault-server status` / `setup`, ma il Terminale non avrebbe trovato il
+       comando: ora lo script di installazione lo rende disponibile nelle nuove finestre del Terminale (una riga in
+       `~/.zprofile`, aggiunta una volta sola) e la fine della configurazione mostra anche il comando completo;
+    2. per un attimo avevo cambiato un messaggio del server in un'indicazione sbagliata («riesegui lo script di
+       installazione», che invece aggiorna e non riconfigura): rimesso com'era prima di committare.
+  - ⚠️ *Limite noto (per una versione futura)*: se un giorno si dovesse **ripristinare il server da un backup**,
+    l'app oggi non sa "riallineare" un server tornato indietro nel tempo. Il paracadute consigliato nelle guide è
+    l'**esportazione** dall'app (Impostazioni › Backup › Esporta…), che si reimporta in qualsiasi cassaforte.
