@@ -209,8 +209,18 @@ func (w *Wizard) Run() error {
 		w.say("poi riesegui:  thevault-server setup")
 	}
 	w.say("")
-	w.say("Comandi utili:  thevault-server status   ·   thevault-server backup")
+	w.say("Per controllare il server, in una nuova finestra del Terminale scrivi:  thevault-server status")
+	w.say("(da questa finestra: %s status)", ShellCommand(BinPath(w.DataDir)))
 	return nil
+}
+
+// ShellCommand writes path so that it can be pasted in the Terminal: with $HOME instead of the home folder
+// and in quotes (the default data folder has a space in "Application Support").
+func ShellCommand(path string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(path, home+string(filepath.Separator)) {
+		path = "$HOME" + strings.TrimPrefix(path, home)
+	}
+	return `"` + strings.ReplaceAll(path, `"`, `\"`) + `"`
 }
 
 func (w *Wizard) configureMail(cfg *config.Config) error {

@@ -54,6 +54,13 @@ xattr -d com.apple.quarantine "$BIN" 2>/dev/null || true
 say "✓ Scaricata la versione $("$BIN" version | awk '{ print $2 }')"
 say ""
 
+# New Terminal windows will know the command "thevault-server" (status, backup, setup…).
+PROFILE="$HOME/.zprofile"
+if ! grep -qs "TheVaultServer/bin" "$PROFILE"; then
+  # shellcheck disable=SC2016 # $HOME and $PATH must expand when the profile runs, not now
+  printf '\n# The Vault server\nexport PATH="$HOME/Library/Application Support/TheVaultServer/bin:$PATH"\n' >>"$PROFILE"
+fi
+
 if [ -f "$CONFIG" ]; then
   # Already set up: replace the program and restart the service (a backup is made first).
   "$BIN" upgrade || fail "Aggiornamento non riuscito (vedi sopra). Il server di prima è ancora installato."

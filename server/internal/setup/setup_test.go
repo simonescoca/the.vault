@@ -170,3 +170,15 @@ func TestWizardRefusesICloudBackupFolder(t *testing.T) {
 		t.Errorf("no explanation:\n%s", out)
 	}
 }
+
+func TestShellCommandCanBePasted(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	got := ShellCommand(filepath.Join(home, "Library", "Application Support", "TheVaultServer", "bin", "thevault-server"))
+	if got != `"$HOME/Library/Application Support/TheVaultServer/bin/thevault-server"` {
+		t.Errorf("command: %s", got)
+	}
+	if got := ShellCommand("/opt/thevault"); got != `"/opt/thevault"` {
+		t.Errorf("command: %s", got)
+	}
+}
