@@ -165,10 +165,10 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T7.2** Installare l'app su Mac e Windows e primo utilizzo → [`docs/guida-app.md`](docs/guida-app.md)
 
 ### Fase 8 — Collaudo finale
-- [ ] **T8.1** Test completi da capo a fondo (più dispositivi, offline, conflitti, allegati)
-- [ ] **T8.2** Revisione di sicurezza
-- [ ] **T8.3** Revisione visiva: schermate in chiaro/scuro, italiano/inglese
-- [ ] **T8.4** Consegna: riepilogo, limiti noti, prossimi passi
+- [x] **T8.1** Test completi da capo a fondo (più dispositivi, offline, conflitti, allegati)
+- [x] **T8.2** Revisione di sicurezza
+- [x] **T8.3** Revisione visiva: schermate in chiaro/scuro, italiano/inglese → [`docs/screenshots/`](docs/screenshots/)
+- [x] **T8.4** Consegna: riepilogo, limiti noti, prossimi passi → sezione 5 qui sotto
 
 ---
 
@@ -455,3 +455,77 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
   - ⚠️ *Limite noto (per una versione futura)*: se un giorno si dovesse **ripristinare il server da un backup**,
     l'app oggi non sa "riallineare" un server tornato indietro nel tempo. Il paracadute consigliato nelle guide è
     l'**esportazione** dall'app (Impostazioni › Backup › Esporta…), che si reimporta in qualsiasi cassaforte.
+
+- **Fase 8 ✅ Collaudo finale**:
+  - **T8.2 Revisione di sicurezza** (server e app riletti da capo, con il codice sorgente di Flutter e di Tailscale
+    alla mano dove serviva). Già a posto: chiavi di accesso dei dispositivi a 256 bit salvate solo come impronta, limiti
+    ai codici email (e il codice da solo non basta: serve l'approvazione o il codice di emergenza), indirizzo del server
+    solo in HTTPS (in chiaro solo in casa), link solo verso siti web, codice di emergenza a 120 bit, Tailscale che passa
+    al server l'indirizzo vero del visitatore (i limiti per indirizzo funzionano e non si possono aggirare).
+    🔴→🟢 *Trovati e risolti*:
+    1. **la cache delle icone teneva in chiaro i nomi dei siti** nel database locale: chi avesse accesso ai file, anche
+       a cassaforte bloccata, avrebbe visto dove hai un account. Ora è cifrata con una chiave derivata da quella della
+       cassaforte e i nomi sono sostituiti da un'impronta (verificato sull'app vera: nessun nome leggibile);
+    2. scaricando le icone l'app si presentava come "TheVault": ora come un normale browser;
+    3. **un'icona malevola poteva far chiudere l'app** (un file piccolo che dichiara un'immagine enorme esaurisce la
+       memoria) e, restando nell'elenco, l'avrebbe fatta chiudere a ogni avvio. Ora la dimensione si controlla prima;
+    4. importando un file di esportazione troncato o manomesso: ora sempre rifiutato con un messaggio chiaro, mai
+       importato a metà. L'esportazione/importazione non aveva un test automatico: ora sì.
+  - **T8.1 Prova da capo a fondo con due app vere** collegate al server vero: voce creata solo da tastiera su un computer
+    e comparsa sull'altro in pochi secondi; **server spento** → entrambe "Offline"; stessa password modificata in modo
+    diverso sui due computer; **server riacceso** → entrambe di nuovo sincronizzate, con la voce e la copia
+    "(conflitto)" che contiene l'altra modifica, più l'avviso. Nessuna modifica persa.
+    Allegati: test automatico nuovo (scegli il file, salva, apri la copia decifrata identica all'originale, "Salva una
+    copia…", copie temporanee cancellate al blocco).
+  - **T8.3 Revisione visiva** con dati d'esempio (Mario Rossi): chiaro/scuro, italiano/inglese, blocco, modifica, nuova
+    voce, impostazioni. Le schermate migliori sono in `docs/screenshots/` e nel `README.md`.
+    🔴→🟢 *Due difetti trovati facendo le schermate*:
+    1. **dopo aver cliccato un risultato della ricerca col mouse, tutte le scorciatoie smettevano di funzionare** (Esc,
+       ⌘N, ⌘F, ⌘E…) finché non si cliccava altrove; idem dopo aver salvato. I test automatici non lo vedevano perché
+       "toccano" invece di cliccare: ora i test usano anche il mouse e la finestra principale si riprende la tastiera;
+    2. ⌘N seguito subito da Esc chiedeva «Vuoi scartare le modifiche?» senza che fosse cambiato nulla (bastava che un
+       campo ricevesse il cursore): ora contano solo le modifiche vere al testo.
+  - 🟢 *Falso allarme*: GitHub senza icona nelle schermate. È la rete di questo ambiente di sviluppo che blocca
+    github.com; sulla tua rete l'icona arriva.
+- **Test dopo la Fase 8**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti; app analyze 0 problemi, **60 test** verdi
+  (+2 strumenti saltati di proposito).
+
+---
+
+## 5. Consegna
+
+### Cosa c'è
+- **Server per il Mac mini** (Go): accesso con codice email, approvazione dei nuovi dispositivi con codice di verifica,
+  sincronizzazione cifrata in tempo reale, allegati, backup notturni, installazione e aggiornamento con un comando,
+  accesso da fuori casa con Tailscale Funnel.
+- **App per Mac e Windows** (Flutter): tutte le funzioni richieste (sezione 1) e gli extra scelti (generatore di
+  password, preferiti, esportazione, riordino delle righe), tema chiaro/scuro, italiano/inglese, Touch ID / Windows Hello
+  con PIN di riserva, funzionamento offline, gestione dei conflitti senza perdere nulla.
+- **Pacchetti**: rilascio automatico su GitHub (`.dmg`, installer Windows, server).
+- **Guide in italiano**: [server](docs/guida-server.md) e [app](docs/guida-app.md).
+- **Qualità**: 60 test dell'app (inclusi 18 sull'interfaccia vera e uno con il server vero e 4 dispositivi), 6 pacchetti di
+  test del server, controlli automatici del codice; prove sull'app vera con schermate.
+
+### Cosa devi fare tu (in ordine)
+1. **Sbloccare GitHub** (la cosa più importante): installa l'app GitHub di Claude sulla repo `the.vault`
+   (https://github.com/apps/claude/installations/select_target) oppure ricollega GitHub da
+   https://claude.ai/connect-github. Senza questo passo tutto il lavoro resta qui e non arriva su GitHub.
+2. Pubblicare il lavoro (lo faccio io appena il punto 1 è fatto: invio, unione nel ramo principale e versione `v1.0.0`;
+   GitHub costruirà da solo l'app per Mac, per Windows e il server).
+3. Seguire la [guida del server](docs/guida-server.md) sul Mac mini, poi la [guida dell'app](docs/guida-app.md).
+
+### Limiti noti
+- **Mai provato su un Mac o un PC Windows veri** (qui ho solo Linux): l'aspetto, Touch ID, Windows Hello, il
+  Portachiavi, le finestre di macOS («Apri comunque») e Windows (SmartScreen), Tailscale e l'invio da iCloud sono stati
+  verificati con simulazioni, leggendo il codice sorgente di Flutter e dei componenti, e (per Windows) con Wine. La prima
+  compilazione su GitHub farà da verifica per il codice Mac (Swift) che qui non si può compilare.
+- App non firmata con un certificato a pagamento: al primo avvio macOS e Windows chiedono conferma (spiegato nella
+  guida); dopo ogni aggiornamento su Mac, una volta la password per il Portachiavi.
+- Ripristinare il server da un backup non è ancora gestito dall'app (sezione Fase 7): il paracadute è l'esportazione.
+- Con la tastiera, Tab si muove tra i campi di testo ma non tra i pulsanti (come macOS di serie).
+
+### Prossimi passi possibili
+- Compilazione automatica delle password nel browser (estensione), come avevi chiesto per "più avanti".
+- App iPhone/iPad e Android (stesso codice Flutter).
+- Ripristino del server da backup con riallineamento automatico dei dispositivi.
+- Firma ufficiale Apple/Microsoft per togliere gli avvisi al primo avvio.

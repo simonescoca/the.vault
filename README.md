@@ -3,6 +3,12 @@
 Gestore di password personale, minimal e intuitivo, sincronizzato in tempo reale tra i tuoi dispositivi
 tramite un server tuo (un Mac mini sempre acceso). Cifratura end-to-end: il server conserva solo dati illeggibili.
 
+![The Vault, tema chiaro](docs/screenshots/vault-light.png)
+
+| Scuro | Modifica |
+|---|---|
+| ![Tema scuro](docs/screenshots/vault-dark.png) | ![Modifica di una voce](docs/screenshots/edit-light.png) |
+
 ## Installazione
 
 1. **Server sul Mac mini**: [guida passo passo](docs/guida-server.md).
