@@ -102,7 +102,7 @@ tra tutti i tuoi dispositivi tramite un server tuo: il **Mac mini M4**, sempre a
 Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del pezzo nuovo, e ne annoto l'esito nel diario.
 
 ### Fase 0 — Preparazione
-- [!] **T0.1** Verifica push su GitHub. *Bloccato: l'app GitHub di Claude non è installata sulla repo (errore 403).*
+- [x] **T0.1** Verifica push su GitHub. *Bloccato all'inizio (errore 403); risolto da te il 2 ottobre: push riuscito.*
 - [x] **T0.2** Piano di lavoro (`todo.md`) e struttura della repo
 - [x] **T0.3** Strumenti di sviluppo (Flutter, Go) e prova di compilazione
 - [~] **T0.4** Test automatici su GitHub (CI) per server e app. *Workflow scritto; si potrà verificare solo quando il push funzionerà.*
