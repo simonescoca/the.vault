@@ -86,6 +86,9 @@ class VaultCrypto {
   /// Key used to encrypt the records.
   SecureKey itemsKey(SecureKey vaultKey) => _derive(vaultKey, 1, 'tv_items');
 
+  /// Key of the local caches (site icons): readable only while the vault is unlocked.
+  SecureKey cacheKey(SecureKey vaultKey) => _derive(vaultKey, 3, 'tv_cache');
+
   /// 16-byte value stored on the server to check that a device received the right vault key.
   Uint8List keyCheck(SecureKey vaultKey) {
     final k = _derive(vaultKey, 2, 'tv_check');
@@ -107,16 +110,15 @@ class VaultCrypto {
   Uint8List _recordAad(String recordId) => _utf8('thevault/item/v1/$recordId');
 
   /// `0x01 ‖ nonce(24) ‖ XChaCha20-Poly1305(pad(plaintext))`.
-  Uint8List encryptRecord(SecureKey itemsKey, String recordId, Uint8List plaintext) {
+  Uint8List encryptRecord(SecureKey itemsKey, String recordId, Uint8List plaintext) => _seal(itemsKey, _recordAad(recordId), plaintext);
+
+  Uint8List decryptRecord(SecureKey itemsKey, String recordId, Uint8List data) => _open(itemsKey, _recordAad(recordId), data, 'record');
+
+  Uint8List _seal(SecureKey key, Uint8List aad, Uint8List plaintext) {
     final aead = sodium.crypto.aeadXChaCha20Poly1305IETF;
     final nonce = randomBytes(aead.nonceBytes);
     final padded = sodium.pad(plaintext, _padBlock);
-    final ct = aead.encrypt(
-      message: padded,
-      nonce: nonce,
-      key: itemsKey,
-      additionalData: _recordAad(recordId),
-    );
+    final ct = aead.encrypt(message: padded, nonce: nonce, key: key, additionalData: aad);
     final out = Uint8List(1 + nonce.length + ct.length);
     out[0] = recordVersion;
     out.setRange(1, 1 + nonce.length, nonce);
@@ -124,24 +126,39 @@ class VaultCrypto {
     return out;
   }
 
-  Uint8List decryptRecord(SecureKey itemsKey, String recordId, Uint8List data) {
+  Uint8List _open(SecureKey key, Uint8List aad, Uint8List data, String what) {
     final aead = sodium.crypto.aeadXChaCha20Poly1305IETF;
     final n = aead.nonceBytes;
     if (data.length < 1 + n + aead.aBytes || data[0] != recordVersion) {
-      throw CryptoException('unsupported or truncated record');
+      throw CryptoException('unsupported or truncated $what');
     }
     try {
       final padded = aead.decrypt(
         cipherText: Uint8List.sublistView(data, 1 + n),
         nonce: Uint8List.sublistView(data, 1, 1 + n),
-        key: itemsKey,
-        additionalData: _recordAad(recordId),
+        key: key,
+        additionalData: aad,
       );
       return sodium.unpad(padded, _padBlock);
     } on SodiumException {
-      throw CryptoException('record authentication failed');
+      throw CryptoException('$what authentication failed');
     }
   }
+
+  // ------------------------------------------------------------------- caches
+
+  /// The name a cache entry is stored under: a keyed hash, so the local database does not show what it is
+  /// about (e.g. the sites of the user).
+  String cacheName(SecureKey cacheKey, String kind, String name) {
+    final h = sodium.crypto.genericHash(message: _utf8('thevault/$kind/v1/$name'), outLen: 16, key: cacheKey);
+    return [for (final b in h) b.toRadixString(16).padLeft(2, '0')].join();
+  }
+
+  Uint8List sealCache(SecureKey cacheKey, String storedName, Uint8List data) => _seal(cacheKey, _cacheAad(storedName), data);
+
+  Uint8List openCache(SecureKey cacheKey, String storedName, Uint8List data) => _open(cacheKey, _cacheAad(storedName), data, 'cache entry');
+
+  Uint8List _cacheAad(String storedName) => _utf8('thevault/cache/v1/$storedName');
 
   // ------------------------------------------------------------ emergency kit
 

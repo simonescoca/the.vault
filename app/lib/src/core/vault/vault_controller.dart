@@ -41,6 +41,7 @@ class VaultController extends ChangeNotifier {
 
   SecureKey? _vaultKey;
   SecureKey? _itemsKey;
+  CacheCipher? _cache;
   final Map<String, Item> _items = {};
 
   /// Records that could not be decrypted (should never happen; shown nowhere, kept for diagnostics).
@@ -56,11 +57,15 @@ class VaultController extends ChangeNotifier {
     return k;
   }
 
+  /// Encrypts the local caches (site icons); null while locked.
+  CacheCipher? get cache => _cache;
+
   /// Opens the vault with its key (the controller takes ownership of [vk]).
   void unlock(SecureKey vk) {
     lock(notify: false);
     _vaultKey = vk;
     _itemsKey = crypto.itemsKey(vk);
+    _cache = CacheCipher(crypto, crypto.cacheKey(vk));
     _reloadAll();
   }
 
@@ -69,8 +74,10 @@ class VaultController extends ChangeNotifier {
     _items.clear();
     _itemsKey?.dispose();
     _vaultKey?.dispose();
+    _cache?._key.dispose();
     _itemsKey = null;
     _vaultKey = null;
+    _cache = null;
     if (notify) notifyListeners();
   }
 
@@ -371,4 +378,16 @@ const _mimes = {
 String mimeFor(String path) {
   final ext = p.extension(path).replaceFirst('.', '').toLowerCase();
   return _mimes[ext] ?? 'application/octet-stream';
+}
+
+/// Encryption of the local caches with a key derived from the vault key (see [VaultCrypto.cacheName]).
+/// After the vault locks its key is gone and every call fails.
+class CacheCipher {
+  CacheCipher(this._crypto, this._key);
+  final VaultCrypto _crypto;
+  final SecureKey _key;
+
+  String name(String kind, String plainName) => _crypto.cacheName(_key, kind, plainName);
+  Uint8List seal(String storedName, Uint8List data) => _crypto.sealCache(_key, storedName, data);
+  Uint8List open(String storedName, Uint8List data) => _crypto.openCache(_key, storedName, data);
 }

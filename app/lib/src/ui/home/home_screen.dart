@@ -33,7 +33,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late final HomeController home = HomeController(context.app.session!.vault);
-  late final FaviconService favicons = widget.favicons ?? FaviconService(context.app.session!.db, enabled: context.app.online);
+  late final FaviconService favicons =
+      widget.favicons ?? FaviconService(context.app.session!.db, home.vault.cache!, enabled: context.app.online);
   final _searchFocus = FocusNode();
   final _homeFocus = FocusNode(debugLabel: 'home');
   final _editKey = GlobalKey<DetailEditState>();

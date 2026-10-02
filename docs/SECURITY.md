@@ -149,6 +149,11 @@ quell'account si sospendono per un'ora. Ogni nuovo collegamento genera un'email 
     web, con il solo permesso di rete dichiarato.
 - **Database locale** (SQLite): contiene le voci **già cifrate** (lo stesso formato del server), le modifiche in attesa
   e le impostazioni non sensibili. Gli allegati scaricati restano cifrati.
+- **Icone dei siti**: scaricate direttamente dai siti (nessun servizio di terzi), presentandosi come un normale
+  browser. La cache locale è cifrata con una chiave derivata da VK (`tv_cache`) e ogni icona è salvata sotto un hash
+  con chiave del nome del sito: a cassaforte bloccata il database non rivela quali siti contiene. Prima di decodificare
+  un'immagine se ne controlla la dimensione dichiarata (max 1024 px per lato, solo il primo fotogramma): un file
+  piccolo che dichiara un'immagine enorme non può esaurire la memoria.
 - **Sblocco**:
   - Touch ID (macOS, solo biometria: niente ripiego sulla password del Mac) o Windows Hello (impronta/volto, oppure il
     PIN di Windows Hello se è l'unico metodo configurato); se non disponibile o annullato → **PIN dell'app**.
@@ -184,3 +189,5 @@ quell'account si sospendono per un'ora. Ogni nuovo collegamento genera un'email 
   poi tutto il contenuto cifrato a flusso con `KB = Argon2id(password, sale, ops=MODERATE, mem=MODERATE)`.
 - Contenuto: manifest, voci in chiaro (JSON), allegati in chiaro; tutto dentro il flusso cifrato.
 - La password del backup non viene salvata da nessuna parte.
+- All'importazione: parametri Argon2id fuori misura rifiutati (un file manomesso non può bloccare l'app), file troncato
+  rifiutato per intero (fine del flusso cifrato obbligatoria e conteggi del manifest verificati): mai importazioni a metà.

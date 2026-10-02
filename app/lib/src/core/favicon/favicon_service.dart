@@ -1,4 +1,6 @@
 // Site icons for the list, fetched directly from each site (no third-party service) and cached locally.
+// The cache is encrypted with a key derived from the vault key, under hashed names: the local database does
+// not reveal which sites are in the vault.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -8,11 +10,13 @@ import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 
 import '../storage/local_db.dart';
+import '../vault/vault_controller.dart';
 
 class FaviconService extends ChangeNotifier {
-  FaviconService(this.db, {http.Client? client, this.enabled = true}) : _http = client ?? http.Client();
+  FaviconService(this.db, this.cipher, {http.Client? client, this.enabled = true}) : _http = client ?? http.Client();
 
   final LocalDb db;
+  final CacheCipher cipher;
   final http.Client _http;
   final bool enabled;
   final Map<String, Uint8List?> _mem = {};
@@ -22,22 +26,32 @@ class FaviconService extends ChangeNotifier {
 
   static const _retryAfterFailure = Duration(days: 1);
   static const _refreshAfter = Duration(days: 30);
-  static const _ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) TheVault/1.0';
+  /// Looks like a browser: sites do not learn that their visitor uses The Vault.
+  static const _ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
 
   static String domainOf(Uri u) => u.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
+
+  String _stored(String domain) => cipher.name('favicon', domain);
 
   /// The icon of [domain] if known; schedules a download otherwise.
   Uint8List? icon(String domain) {
     if (domain.isEmpty) return null;
     if (_mem.containsKey(domain)) return _mem[domain];
-    final cached = db.favicon(domain);
+    final name = _stored(domain);
+    final cached = db.favicon(name);
     final now = DateTime.now().millisecondsSinceEpoch;
     if (cached != null) {
-      _mem[domain] = cached.data;
+      Uint8List? data;
+      try {
+        data = cached.data == null ? null : cipher.open(name, cached.data!);
+      } catch (_) {
+        data = null; // unreadable entry: fetched again below
+      }
+      _mem[domain] = data;
       final age = Duration(milliseconds: now - cached.fetchedAt);
-      final stale = cached.data == null ? age > _retryAfterFailure : age > _refreshAfter;
+      final stale = data == null ? (cached.data != null || age > _retryAfterFailure) : age > _refreshAfter;
       if (stale) _schedule(domain);
-      return cached.data;
+      return data;
     }
     _mem[domain] = null;
     _schedule(domain);
@@ -71,9 +85,10 @@ class FaviconService extends ChangeNotifier {
       png = null;
     }
     try {
-      db.setFavicon(domain, png, DateTime.now().millisecondsSinceEpoch);
+      final name = _stored(domain);
+      db.setFavicon(name, png == null ? null : cipher.seal(name, png), DateTime.now().millisecondsSinceEpoch);
     } catch (_) {
-      return; // database closed (signed out)
+      return; // vault locked or database closed (signed out) meanwhile
     }
     _mem[domain] = png;
     notifyListeners();
@@ -147,23 +162,63 @@ class FaviconService extends ChangeNotifier {
     return [for (final e in out) e.$1];
   }
 
+  /// Largest side accepted: a small file can declare a huge picture, and decoding it would exhaust memory.
+  static const maxSide = 1024;
+
+  static bool _sideOk(int w, int h) => w > 0 && h > 0 && w <= maxSide && h <= maxSide;
+
   /// Decodes any common image format (including .ico) and returns a PNG of at most 64×64, or null.
+  /// The size the file declares is checked before decoding, and only the first frame is decoded.
   static Uint8List? toPng(Uint8List bytes) {
     if (bytes.length < 8) return null;
     try {
-      img.Image? decoded;
       final isIco = bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 1 && bytes[3] == 0;
-      if (isIco) {
-        decoded = img.decodeIco(bytes);
-      } else {
-        decoded = img.decodeImage(bytes);
-      }
+      final decoded = isIco ? _decodeIco(bytes) : _decodeFirstFrame(bytes);
       if (decoded == null || decoded.width < 8 || decoded.height < 8) return null;
       final resized = decoded.width > 64 ? img.copyResize(decoded, width: 64, height: 64, interpolation: img.Interpolation.average) : decoded;
       return Uint8List.fromList(img.encodePng(resized));
     } catch (_) {
       return null;
     }
+  }
+
+  static img.Image? _decodeFirstFrame(Uint8List bytes) {
+    final decoder = img.findDecoderForData(bytes);
+    final info = decoder?.startDecode(bytes);
+    if (decoder == null || info == null || !_sideOk(info.width, info.height)) return null;
+    return decoder.decodeFrame(0);
+  }
+
+  /// .ico: picks the best picture (up to 256 px) whose real declared size is acceptable, and decodes only it.
+  static img.Image? _decodeIco(Uint8List bytes) {
+    final d = ByteData.sublistView(bytes);
+    final count = d.getUint16(4, Endian.little);
+    var best = -1, bestSide = 0;
+    for (var i = 0; i < count && 6 + 16 * (i + 1) <= bytes.length; i++) {
+      final e = 6 + 16 * i;
+      final side = bytes[e] == 0 ? 256 : bytes[e];
+      final size = d.getUint32(e + 8, Endian.little);
+      final offset = d.getUint32(e + 12, Endian.little);
+      if (size < 8 || offset + size > bytes.length) continue;
+      final data = Uint8List.sublistView(bytes, offset, offset + size);
+      if (!_icoPictureOk(data) || side <= bestSide) continue;
+      best = i;
+      bestSide = side;
+    }
+    if (best < 0) return null;
+    final ico = img.IcoDecoder();
+    return ico.startDecode(bytes) == null ? null : ico.decodeFrame(best);
+  }
+
+  /// A picture inside an .ico is a PNG or a bitmap without file header (its height counts the mask too).
+  static bool _icoPictureOk(Uint8List data) {
+    if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47) {
+      final info = img.PngDecoder().startDecode(data);
+      return info != null && _sideOk(info.width, info.height);
+    }
+    if (data.length < 12) return false;
+    final d = ByteData.sublistView(data);
+    return _sideOk(d.getInt32(4, Endian.little), d.getInt32(8, Endian.little).abs() ~/ 2);
   }
 
   @override

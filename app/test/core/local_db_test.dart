@@ -57,11 +57,11 @@ void main() {
     db.setBlob('b1', 'synced', 10);
     expect(db.blob('b1')!.state, 'synced');
     expect(db.blobsInState('synced').single.id, 'b1');
-    db.setFavicon('netflix.com', b(9), 1);
-    expect(db.favicon('netflix.com')!.data, b(9));
+    db.setFavicon('9f2c', b(9), 1);
+    expect(db.favicon('9f2c')!.data, b(9));
     db.wipe();
     expect(db.cursor, 0);
     expect(db.blob('b1'), isNull);
-    expect(db.favicon('netflix.com'), isNull);
+    expect(db.favicon('9f2c'), isNull);
   });
 }

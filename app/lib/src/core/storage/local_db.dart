@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqlite3/sqlite3.dart';
 
 /// A record as last received from the server.
@@ -81,6 +82,14 @@ class LocalDb {
         CREATE TABLE blobs (id TEXT PRIMARY KEY, state TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE favicons (domain TEXT PRIMARY KEY, data BLOB, fetched_at INTEGER NOT NULL);
         PRAGMA user_version = 1;
+      ''');
+    }
+    if (v < 2) {
+      // Site icons: stored under a keyed hash and encrypted (version 1 kept the site names in clear).
+      _db.execute('''
+        DROP TABLE IF EXISTS favicons;
+        CREATE TABLE favicons (name TEXT PRIMARY KEY, data BLOB, fetched_at INTEGER NOT NULL);
+        PRAGMA user_version = 2;
       ''');
     }
   }
@@ -259,17 +268,22 @@ class LocalDb {
 
   // ------------------------------------------------------------------ favicons
 
-  ({Uint8List? data, int fetchedAt})? favicon(String domain) {
-    final r = _db.select('SELECT data, fetched_at FROM favicons WHERE domain = ?', [domain]);
+  /// A cached site icon; [name] and [data] are opaque (hashed and encrypted by the favicon service).
+  ({Uint8List? data, int fetchedAt})? favicon(String name) {
+    final r = _db.select('SELECT data, fetched_at FROM favicons WHERE name = ?', [name]);
     if (r.isEmpty) return null;
     return (data: r.first['data'] as Uint8List?, fetchedAt: r.first['fetched_at'] as int);
   }
 
-  void setFavicon(String domain, Uint8List? data, int fetchedAt) => _db.execute(
-        'INSERT INTO favicons(domain, data, fetched_at) VALUES (?, ?, ?) '
-        'ON CONFLICT(domain) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at',
-        [domain, data, fetchedAt],
+  void setFavicon(String name, Uint8List? data, int fetchedAt) => _db.execute(
+        'INSERT INTO favicons(name, data, fetched_at) VALUES (?, ?, ?) '
+        'ON CONFLICT(name) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at',
+        [name, data, fetchedAt],
       );
+
+  /// The stored icon names (tests check that they reveal nothing).
+  @visibleForTesting
+  List<String> debugFaviconNames() => [for (final r in _db.select('SELECT name FROM favicons')) r['name'] as String];
 
   /// Removes everything (sign out / revoked device).
   void wipe() {

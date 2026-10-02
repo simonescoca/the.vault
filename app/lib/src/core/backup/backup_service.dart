@@ -127,7 +127,11 @@ class BackupService {
   }
 
   Future<SecureKey> _key(Map<String, dynamic> h, String password) async {
-    final bytes = await VaultCrypto.backupKey(password, base64.decode(h['salt'] as String), (h['ops'] as num).toInt(), (h['mem'] as num).toInt());
+    final ops = (h['ops'] as num).toInt();
+    final mem = (h['mem'] as num).toInt();
+    // The file says how hard the password is to compute: absurd values would freeze or crash the app.
+    if (ops < 1 || ops > 10 || mem < 8 << 20 || mem > 1 << 30) throw BackupException('damaged header');
+    final bytes = await VaultCrypto.backupKey(password, base64.decode(h['salt'] as String), ops, mem);
     return SecureKey.fromList(crypto.sodium, bytes);
   }
 
@@ -155,10 +159,18 @@ class BackupService {
     await tmp.create(recursive: true);
     final extracted = <String, File>{};
     String? currentFile;
+    // What the manifest promises, and what was read: a cut file must not import halfway.
+    int? expectedItems, expectedFiles;
+    var readItems = 0, readFiles = 0;
     try {
       await _frames(path, password, (type, data, stream) async {
         switch (type) {
+          case 1:
+            final m = jsonDecode(utf8.decode(data!)) as Map<String, dynamic>;
+            expectedItems = (m['items'] as num).toInt();
+            expectedFiles = (m['files'] as num).toInt();
           case 2:
+            readItems++;
             final j = jsonDecode(utf8.decode(data!)) as Map<String, dynamic>;
             final item = Item.fromJson(j['id'] as String, Map<String, dynamic>.from(j)..remove('id'));
             final existing = vault.byId(item.id);
@@ -167,6 +179,7 @@ class BackupService {
               wanted.addAll(item.files.map((f) => f.id));
             }
           case 3:
+            readFiles++;
             currentFile = (jsonDecode(utf8.decode(data!)) as Map<String, dynamic>)['id'] as String;
           case 4:
             final id = currentFile;
@@ -182,6 +195,7 @@ class BackupService {
         }
         return true;
       });
+      if (readItems != expectedItems || readFiles != expectedFiles) throw BackupException('truncated file');
       var written = 0;
       for (final item in incoming) {
         final files = <Attachment>[];
@@ -236,6 +250,8 @@ class BackupService {
       }
     } on BackupException {
       rethrow;
+    } on StreamClosedEarlyException {
+      throw BackupException('truncated file');
     } on SodiumException {
       throw BackupException('wrong password or damaged file');
     } catch (e) {
