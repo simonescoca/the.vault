@@ -114,14 +114,14 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T1.4** Design visivo: font, colori, spaziature, icone, componenti (`docs/DESIGN.md`). *Le anteprime delle schermate arrivano con la Fase 4, renderizzate dall'app vera.*
 
 ### Fase 2 — Server (Mac mini)
-- [ ] **T2.1** Scheletro del server: configurazione, database, log, avvio
-- [ ] **T2.2** Accesso con codice email (OTP) e invio email
-- [ ] **T2.3** Dispositivi: registrazione, approvazione da un altro dispositivo, kit di emergenza, disconnessione
-- [ ] **T2.4** Sincronizzazione delle voci cifrate e notifiche in tempo reale (WebSocket)
-- [ ] **T2.5** Allegati: caricamento e scaricamento a blocchi
-- [ ] **T2.6** Protezioni: limiti ai tentativi, limiti di traffico, dimensioni massime, header di sicurezza
-- [ ] **T2.7** Backup automatico giornaliero
-- [ ] **T2.8** Installazione guidata su macOS (configurazione, avvio automatico, stato, aggiornamento)
+- [x] **T2.1** Scheletro del server: configurazione, database, log, avvio
+- [x] **T2.2** Accesso con codice email (OTP) e invio email
+- [x] **T2.3** Dispositivi: registrazione, approvazione da un altro dispositivo, kit di emergenza, disconnessione
+- [x] **T2.4** Sincronizzazione delle voci cifrate e notifiche in tempo reale (WebSocket)
+- [x] **T2.5** Allegati: caricamento e scaricamento a blocchi
+- [x] **T2.6** Protezioni: limiti ai tentativi, limiti di traffico, dimensioni massime, header di sicurezza
+- [x] **T2.7** Backup automatico giornaliero
+- [x] **T2.8** Installazione guidata su macOS (configurazione, avvio automatico, stato, aggiornamento)
 
 ### Fase 3 — Cuore dell'app (logica, senza grafica)
 - [ ] **T3.1** Crittografia: chiavi, cifratura di voci e file, sigilli per l'approvazione, codice di emergenza
@@ -225,3 +225,39 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
     e il suo zero si confonde di più con la O.
   - 🟡 *Scivolone (risolto)*: nel primo confronto i testi apparivano sottolineati in giallo. Era l'avviso di Flutter per i
     testi fuori da un contenitore "Material", non un problema dei font: corretto il banco di prova.
+
+- **Fase 2 ✅ Server** (Go, cartella `server/`), un task dopo l'altro, con test a ogni passo:
+  - **T2.1** Scheletro: configurazione (`config.json`, permessi riservati), database SQLite con migrazioni, registro, avvio
+    e spegnimento puliti. Test del database: utenti, dispositivi, creazione della cassaforte (anche in "gara" tra due
+    dispositivi), revisioni, conflitti, voci eliminate, riferimenti agli allegati, approvazioni.
+  - **T2.2** Login con codice email: codice di 6 cifre valido 10 minuti, max 5 tentativi, conservato solo come impronta
+    (HMAC), attesa di 30 s tra un invio e l'altro, limiti per email e per indirizzo IP. Le email non ammesse si comportano
+    esattamente come quelle ammesse, così da fuori non si capisce quale email usi.
+    Invio email via SMTP (iCloud / Gmail / altro) **provato contro un finto server di posta** con connessione cifrata e
+    password: funziona. Modelli in italiano e inglese.
+  - **T2.3** Dispositivi: stati `setup` → `pending` → `active`; approvazione con il protocollo a impegno (il server fa solo
+    da postino), codice di emergenza, rinomina, uscita, disconnessione a distanza. Dopo 3 rifiuti in un'ora, stop di un'ora
+    alle nuove richieste. Email di avviso quando un dispositivo viene collegato.
+  - **T2.4** Sincronizzazione: voci cifrate con numero di revisione; scrittura accettata solo se il dispositivo parte
+    dall'ultima versione, altrimenti risposta "conflitto" con la versione attuale. Notifiche istantanee via WebSocket.
+  - **T2.5** Allegati a blocchi da 4 MB: **ripresa** dopo un'interruzione, verifica SHA-256, scaricamento anche parziale.
+    Gli allegati non più usati vengono cancellati dopo 24 ore di "tolleranza", utile in caso di conflitti.
+  - **T2.6** Protezioni: limiti di tentativi e di traffico, dimensioni massime, confronti a tempo costante, nessun segreto
+    nei registri, header di sicurezza.
+  - **T2.7** Backup notturno: copia coerente del database più gli allegati in una cartella condivisa (gli allegati non
+    cambiano mai, quindi non si duplicano), conservazione di 30 giorni. Se il Mac era spento all'ora del backup, lo fa
+    appena riparte.
+  - **T2.8** Installazione guidata in italiano (`thevault-server setup`): email, invio email con prova reale, cartella dei
+    backup (predefinita: iCloud Drive), avvio automatico (servizio macOS che si riavvia da solo), Tailscale Funnel per
+    l'accesso da fuori casa con verifica finale. In più: `status`, `backup`, `uninstall`, `version`.
+  - **Collaudo del programma vero**: avviato, codice richiesto, login fatto → ✅. Compila per Mac Apple Silicon e Intel.
+  - 🟡 *Scivoloni (risolti)*:
+    1. un mio test si aspettava l'oggetto dell'email "codificato", ma i testi senza accenti restano in chiaro (è il
+       comportamento corretto): ho sbagliato l'aspettativa, non il codice;
+    2. il test degli allegati provava a leggere come testo un file binario: aggiunto un controllo che guarda solo l'esito.
+  - 📝 Cambiato rispetto al protocollo iniziale: l'eliminazione definitiva passa la revisione nell'indirizzo invece che nel
+    corpo della richiesta, perché alcuni proxy scartano il corpo delle richieste DELETE (`PROTOCOL.md` aggiornato).
+  - ⚠️ *Da verificare sul Mac mini vero* (qui non ho macOS): servizio `launchctl`, comandi di Tailscale Funnel, invio da
+    iCloud. Il codice è pronto e testato con simulazioni; la prova reale sarà nella guida passo passo.
+- **Test dopo la Fase 2**: `scripts/test-all.sh` → ✅ (server: 6 pacchetti di test verdi, con controllo delle "race";
+  app: 3 test verdi).
