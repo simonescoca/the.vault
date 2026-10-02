@@ -153,12 +153,10 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T5.4** Appunti con svuotamento automatico, apertura e salvataggio file, trascinamento
 
 ### Fase 6 — Pacchetti e rilascio
-- [~] **T6.1** Build macOS (`.dmg`) con GitHub Actions. *Pronta e controllata; girerà al primo push.*
-- [~] **T6.2** Build Windows (installer `.exe`) con GitHub Actions. *Installer provato davvero (con Wine); la build
-  completa girerà al primo push.*
+- [x] **T6.1** Build macOS (`.dmg`) con GitHub Actions
+- [x] **T6.2** Build Windows (installer `.exe`) con GitHub Actions
 - [x] **T6.3** Server per Mac mini: programma e script di installazione
-- [!] **T6.4** Pubblicazione della release su GitHub. *Bloccata dal push (403): basta creare la versione `v1.0.0`
-  quando il push funziona.*
+- [x] **T6.4** Pubblicazione della release su GitHub → [versione 1.0.1](https://github.com/simonescoca/the.vault/releases/latest)
 
 ### Fase 7 — Guide (in italiano, passo passo)
 - [x] **T7.1** Installare il server sul Mac mini (email, accesso da fuori casa, backup) → [`docs/guida-server.md`](docs/guida-server.md)
@@ -514,6 +512,9 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
   `get-task-allow`, che permetterebbe a un altro programma del Mac di leggere la memoria di The Vault (con la chiave della
   cassaforte aperta) senza essere amministratore. Tolto per le versioni pubblicate, e il rilascio ora si ferma da solo
   se ricompare. → **versione 1.0.1**.
+- **Pubblicata la versione 1.0.1** ✅ — ricontrollata scaricando il `.dmg`: versione 1.0.1, permessi solo "niente
+  sandbox" e "accesso alla rete" su entrambi i processori. È l'ultima versione, quella a cui puntano i link delle guide.
+  La 1.0.0 resta nell'elenco delle Releases: non usarla (puoi eliminarla dalla pagina, se vuoi).
 
 ---
 
@@ -531,19 +532,15 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - **Qualità**: 60 test dell'app (inclusi 18 sull'interfaccia vera e uno con il server vero e 4 dispositivi), 6 pacchetti di
   test del server, controlli automatici del codice; prove sull'app vera con schermate.
 
-### Cosa devi fare tu (in ordine)
-1. **Sbloccare GitHub** (la cosa più importante): installa l'app GitHub di Claude sulla repo `the.vault`
-   (https://github.com/apps/claude/installations/select_target) oppure ricollega GitHub da
-   https://claude.ai/connect-github. Senza questo passo tutto il lavoro resta qui e non arriva su GitHub.
-2. Pubblicare il lavoro (lo faccio io appena il punto 1 è fatto: invio, unione nel ramo principale e versione `v1.0.0`;
-   GitHub costruirà da solo l'app per Mac, per Windows e il server).
+### Cosa devi fare tu
+1. ~~Sbloccare GitHub~~ ✅ fatto.
+2. ~~Pubblicare~~ ✅ fatto: [versione 1.0.1](https://github.com/simonescoca/the.vault/releases/latest).
 3. Seguire la [guida del server](docs/guida-server.md) sul Mac mini, poi la [guida dell'app](docs/guida-app.md).
 
 ### Limiti noti
-- **Mai provato su un Mac o un PC Windows veri** (qui ho solo Linux): l'aspetto, Touch ID, Windows Hello, il
-  Portachiavi, le finestre di macOS («Apri comunque») e Windows (SmartScreen), Tailscale e l'invio da iCloud sono stati
-  verificati con simulazioni, leggendo il codice sorgente di Flutter e dei componenti, e (per Windows) con Wine. La prima
-  compilazione su GitHub farà da verifica per il codice Mac (Swift) che qui non si può compilare.
+- **Mai usato su un Mac o un PC Windows veri** (qui ho solo Linux): le app per Mac e Windows sono compilate da GitHub
+  su macchine vere e controllate file per file, ma l'aspetto, Touch ID, Windows Hello, il Portachiavi, le finestre di
+  macOS («Apri comunque») e Windows (SmartScreen), Tailscale e l'invio da iCloud li vedrai per la prima volta tu.
 - App non firmata con un certificato a pagamento: al primo avvio macOS e Windows chiedono conferma (spiegato nella
   guida); dopo ogni aggiornamento su Mac, una volta la password per il Portachiavi.
 - Ripristinare il server da un backup non è ancora gestito dall'app (sezione Fase 7): il paracadute è l'esportazione.
