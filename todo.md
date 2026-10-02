@@ -105,7 +105,7 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T0.1** Verifica push su GitHub. *Bloccato all'inizio (errore 403); risolto da te il 2 ottobre: push riuscito.*
 - [x] **T0.2** Piano di lavoro (`todo.md`) e struttura della repo
 - [x] **T0.3** Strumenti di sviluppo (Flutter, Go) e prova di compilazione
-- [~] **T0.4** Test automatici su GitHub (CI) per server e app. *Primo giro su GitHub: server, test e Mac ✅; Windows ❌ per un componente esterno, corretto (vedi diario).*
+- [x] **T0.4** Test automatici su GitHub (CI) per server e app. *Tutto verde su GitHub, comprese le compilazioni Mac e Windows (dopo una correzione per un componente esterno, vedi diario).*
 
 ### Fase 1 — Progettazione
 - [x] **T1.1** Specifiche funzionali dettagliate: schermate, comportamenti, regole (`docs/SPEC.md`)
@@ -490,8 +490,6 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - **Test dopo la Fase 8**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti; app analyze 0 problemi, **60 test** verdi
   (+2 strumenti saltati di proposito).
 
----
-
 ### 2026-10-02 — Giorno 1, dopo la consegna: il primo giro su GitHub
 
 - **Push sbloccato** da te: i 19 commit sono su GitHub (prima li ho firmati di nuovo tutti, perché la pulizia della
@@ -503,6 +501,7 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
   recente di Visual Studio installata da GitHub ora rifiuta. → Correzione indicata dal messaggio di errore stesso di
   Microsoft: una definizione nel progetto Windows (`_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS`) prima di
   compilare i componenti. Da tenere d'occhio: quando il componente verrà aggiornato, la riga si potrà togliere.
+- **Secondo giro della CI: tutto ✅** — server, 60 test dell'app, compilazione **Mac** e compilazione **Windows**.
 
 ---
 
