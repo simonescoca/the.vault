@@ -55,13 +55,16 @@ class SyncEngine {
   final transfers = ValueNotifier<Map<String, double>>({});
 
   Object? lastError;
+
+  /// When false, [sync] does nothing (UI tests without a server).
+  bool enabled = true;
   Completer<void>? _inflight;
   bool _again = false;
   bool _disposed = false;
 
   /// Requests a sync. Calls while a sync is running are merged into one more round.
   Future<void> sync() {
-    if (_disposed) return Future.value();
+    if (_disposed || !enabled) return Future.value();
     final current = _inflight;
     if (current != null) {
       _again = true;

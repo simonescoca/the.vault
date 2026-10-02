@@ -127,7 +127,8 @@ Il login non viene **mai** più richiesto su quel dispositivo, a meno che il dis
 - **Testo con link**: se la riga ha un link associato, il valore è mostrato come link; il clic apre l'indirizzo associato.
   Al passaggio del mouse compare l'indirizzo. L'icona "copia" copia il testo; il menu del tasto destro offre anche
   "Copia link".
-- **Email**: mai cliccabili come link. Il clic le copia come qualsiasi altro valore.
+- **Email**: mai trasformate in link in automatico (niente apertura del programma di posta): il clic le copia come
+  qualsiasi altro valore. Se però associ tu, di proposito, un link a quella riga, vale il link che hai scelto.
 - Valori su più righe: mostrati così come sono.
 - **Descrizione**: sotto le righe, nel font delle chiavi, colore pieno. Assente se vuota.
 - **Allegati**: elenco con icona del tipo, nome e dimensione. Clic → si apre con l'app predefinita del computer.

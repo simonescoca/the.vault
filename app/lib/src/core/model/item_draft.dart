@@ -119,6 +119,13 @@ class ItemDraft {
     fields.insert(to, f);
   }
 
+  /// Moves a row to [newIndex], counted after the row has been removed from [oldIndex].
+  void moveRowTo(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= fields.length) return;
+    final f = fields.removeAt(oldIndex);
+    fields.insert(newIndex.clamp(0, fields.length), f);
+  }
+
   /// Site name proposed as title while the title is empty ("Netflix").
   String? get titleSuggestion {
     for (final f in fields) {

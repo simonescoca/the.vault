@@ -1,0 +1,402 @@
+{
+  "@@locale": "en",
+  "appName": "The Vault",
+  "tagline": "Your passwords, safe, everywhere.",
+  "start": "Get started",
+  "continueLabel": "Continue",
+  "back": "Back",
+  "cancel": "Cancel",
+  "save": "Save",
+  "edit": "Edit",
+  "delete": "Delete",
+  "done": "Done",
+  "close": "Close",
+  "retry": "Try again",
+  "copy": "Copy",
+  "copied": "Copied",
+  "open": "Open",
+  "genericError": "Something went wrong: {error}",
+  "@genericError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "offlineError": "The server can't be reached right now.",
+  "serverTitle": "Your server",
+  "serverSubtitle": "Enter the address shown at the end of the server setup on your Mac mini.",
+  "serverHint": "e.g. mac-mini.tail1234.ts.net",
+  "serverUnreachable": "Server not reachable. Check the address and that the Mac mini is on.",
+  "serverNotVault": "This is not a The Vault server.",
+  "serverInvalid": "This address is not valid.",
+  "emailTitle": "Your email",
+  "emailSubtitle": "We'll send you a code to sign in. On this device you'll only do it once.",
+  "emailHint": "name@example.com",
+  "sendCode": "Send code",
+  "emailInvalid": "This email is not valid.",
+  "mailFailed": "The server could not send the email. Check its email settings.",
+  "tooManyRequests": "Too many attempts. Try again in {seconds} s.",
+  "@tooManyRequests": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "codeTitle": "Check your email",
+  "codeSubtitle": "Enter the 6-digit code we sent to {email}.",
+  "@codeSubtitle": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "codeWrong": "Wrong code. Attempts left: {left}.",
+  "@codeWrong": {
+    "placeholders": {
+      "left": {
+        "type": "int"
+      }
+    }
+  },
+  "codeExpired": "The code has expired. Request a new one.",
+  "resendCode": "Send a new code",
+  "resendIn": "New code in {seconds} s",
+  "@resendIn": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "creatingVault": "Creating your vault…",
+  "kitTitle": "Your emergency code",
+  "kitSubtitle": "Keep it somewhere safe: printed, or anywhere that isn't this computer. You'll need it only if you lose access to all your devices. Without it, and without a connected device, your data can't be recovered.",
+  "kitSavePdf": "Save PDF",
+  "kitConfirm": "I've stored the code in a safe place",
+  "kitPdfTitle": "The Vault — Emergency kit",
+  "kitPdfAccount": "Account",
+  "kitPdfServer": "Server",
+  "kitPdfDate": "Created on",
+  "kitPdfCode": "Emergency code",
+  "kitPdfHowTo": "How to use it: on a new device, sign in with your email, then choose “I don't have other devices” and type this code.",
+  "kitPdfWarning": "Anyone with this code and access to your email can open your vault. Keep it private.",
+  "kitSaved": "Emergency kit saved",
+  "approvalTitle": "Confirm this device",
+  "approvalSubtitle": "Open The Vault on a device you already use: it will ask you to approve this access.",
+  "approvalWaiting": "Waiting for approval…",
+  "approvalCodeHint": "Check that the other device shows the same code, then approve there.",
+  "verificationCode": "Verification code",
+  "noOtherDevice": "I don't have other devices",
+  "approvalRejected": "Access was rejected.",
+  "approvalExpired": "The request has expired.",
+  "approvalPaused": "Too many rejected requests. Try again in an hour.",
+  "approvalInvalid": "Something doesn't add up: the approval was refused for safety.",
+  "startOver": "Start over",
+  "recoveryTitle": "Emergency code",
+  "recoverySubtitle": "Enter the emergency code you saved when you created your vault.",
+  "recoveryWrong": "This emergency code is not correct.",
+  "recoveryFormat": "The code has 24 characters, in groups of four.",
+  "openVault": "Open the vault",
+  "pinTitle": "Choose a 6-digit PIN",
+  "pinSubtitle": "You'll use it to open The Vault when fingerprint or face recognition aren't available.",
+  "pinRepeat": "Repeat the PIN",
+  "pinMismatch": "The PINs don't match. Try again.",
+  "biometricsTitle": "Unlock with {method}?",
+  "@biometricsTitle": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricsSubtitle": "Faster and just as safe. You can change it later in Settings.",
+  "enable": "Enable",
+  "notNow": "Not now",
+  "lockedTitle": "The Vault is locked",
+  "unlock": "Unlock",
+  "usePin": "Use PIN",
+  "useMethod": "Use {method}",
+  "@useMethod": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "pinWrong": "Wrong PIN",
+  "pinAttemptsLeft": "Wrong PIN. Attempts left: {left}",
+  "@pinAttemptsLeft": {
+    "placeholders": {
+      "left": {
+        "type": "int"
+      }
+    }
+  },
+  "pinWait": "Too many attempts. Wait {seconds} s.",
+  "@pinWait": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "pinWiped": "Too many wrong PINs: this device was disconnected for safety. Your data is safe on the server.",
+  "pendingRequests": "{count, plural, =1{1 access request waiting} other{{count} access requests waiting}}",
+  "@pendingRequests": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "biometricReason": "Unlock The Vault",
+  "sectionAll": "All",
+  "sectionFavorites": "Favorites",
+  "sectionTrash": "Trash",
+  "settings": "Settings",
+  "search": "Search",
+  "newItem": "New entry",
+  "syncOk": "Synced",
+  "syncing": "Syncing…",
+  "syncOffline": "Offline",
+  "syncOfflineHint": "Changes will be sent as soon as the server is reachable.",
+  "syncError": "Sync problem",
+  "pendingChanges": "{count, plural, =1{1 change to send} other{{count} changes to send}}",
+  "@pendingChanges": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "emptyAll": "No passwords yet.\nCreate one with +",
+  "emptyFavorites": "No favorites.\nUse the star to add one.",
+  "emptyTrash": "The trash is empty",
+  "noResults": "No results for “{query}”",
+  "@noResults": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "selectItem": "Select a password",
+  "deletedOn": "Deleted on {date}",
+  "@deletedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "addFavorite": "Add to favorites",
+  "removeFavorite": "Remove from favorites",
+  "more": "More",
+  "moveToTrash": "Move to trash",
+  "movedToTrash": "Moved to trash",
+  "undo": "Undo",
+  "inTrashBanner": "This entry is in the trash",
+  "restore": "Restore",
+  "restored": "Restored",
+  "deleteForever": "Delete permanently",
+  "deleteForeverConfirm": "Permanently delete “{title}”? It can't be recovered.",
+  "@deleteForeverConfirm": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "emptyTrashAction": "Empty trash",
+  "emptyTrashConfirm": "{count, plural, =1{Permanently delete 1 entry? It can't be recovered.} other{Permanently delete {count} entries? They can't be recovered.}}",
+  "@emptyTrashConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hideValue": "Hide value",
+  "showValue": "Show value",
+  "copyLink": "Copy link",
+  "copyText": "Copy text",
+  "openLink": "Open in browser",
+  "clipboardCleared": "Clipboard cleared",
+  "attachments": "Attachments",
+  "saveCopy": "Save a copy…",
+  "downloading": "Downloading…",
+  "uploading": "Uploading…",
+  "saved": "Saved",
+  "fileSaved": "File saved",
+  "cannotOpen": "The file could not be opened.",
+  "titleHint": "Title",
+  "keyHint": "key",
+  "valueHint": "value",
+  "suggestionWebsite": "website",
+  "suggestionEmail": "email",
+  "suggestionPassword": "password",
+  "addRow": "Add row",
+  "removeRow": "Remove row",
+  "dragRow": "Drag to reorder",
+  "descriptionHint": "Description",
+  "addLink": "Link to a web address",
+  "editLink": "Edit link",
+  "linkHint": "https://…",
+  "linkInvalid": "This is not a valid web address.",
+  "removeLink": "Remove link",
+  "generatePassword": "Generate password",
+  "length": "Length",
+  "symbols": "Symbols",
+  "regenerate": "Regenerate",
+  "use": "Use",
+  "dropFiles": "Drop files here or",
+  "chooseFiles": "choose…",
+  "fileTooLarge": "“{name}” is larger than 200 MB.",
+  "@fileTooLarge": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "removeAttachment": "Remove",
+  "needsTitle": "Give this entry a title",
+  "discardTitle": "Discard the changes?",
+  "discard": "Discard",
+  "keepEditing": "Keep editing",
+  "editConflictTitle": "Changed on another device",
+  "editConflictBody": "This entry was changed on another device while you were editing it.",
+  "overwrite": "Overwrite",
+  "keepBoth": "Keep both",
+  "conflictCopyNotice": "An entry was changed on two devices: both versions were kept.",
+  "conflictSuffix": " (conflict)",
+  "newAccessTitle": "New access",
+  "newAccessBody": "“{name}” ({platform}) wants to access your The Vault.",
+  "@newAccessBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "newAccessCodeHint": "Check that the new device shows the same code.",
+  "newAccessWarning": "If the code is different, reject: someone may be trying to get in.",
+  "approve": "Approve",
+  "reject": "Reject",
+  "deviceApproved": "Device approved",
+  "approvalHandledElsewhere": "The request was handled on another device.",
+  "approvalTampered": "The request doesn't add up and was rejected for safety.",
+  "waitingForDevice": "Waiting for the new device…",
+  "settingsGeneral": "General",
+  "settingsSecurity": "Security",
+  "settingsDevices": "Devices",
+  "settingsBackup": "Backup",
+  "settingsAccount": "Account",
+  "appearance": "Appearance",
+  "themeSystem": "System",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "language": "Language",
+  "languageSystem": "System",
+  "unlockWith": "Unlock with {method}",
+  "@unlockWith": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "biometricsUnavailable": "Not available on this computer",
+  "changePin": "Change PIN",
+  "currentPin": "Current PIN",
+  "newPin": "New PIN",
+  "pinChanged": "PIN changed",
+  "autoLock": "Lock after",
+  "minutesShort": "{count} min",
+  "@minutesShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "secondsShort": "{count} s",
+  "@secondsShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "clipboardClear": "Clear clipboard after",
+  "never": "Never",
+  "emergencyKit": "Emergency kit",
+  "newEmergencyCode": "Generate a new code",
+  "newEmergencyCodeConfirm": "The old code will stop working. Continue?",
+  "thisDevice": "This device",
+  "lastSeen": "Last seen {date}",
+  "@lastSeen": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "rename": "Rename",
+  "deviceName": "Device name",
+  "disconnect": "Disconnect",
+  "disconnectConfirm": "Disconnect “{name}”? It will lose access immediately.",
+  "@disconnectConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "pendingDevice": "Waiting for approval",
+  "exportTitle": "Export…",
+  "exportSubtitle": "A file with all your entries and attachments, protected by a password.",
+  "exportPassword": "Password for the file",
+  "exportPasswordRepeat": "Repeat the password",
+  "passwordTooShort": "Too short: use at least 10 characters.",
+  "passwordsDontMatch": "The passwords don't match.",
+  "exportDone": "Backup saved",
+  "exporting": "Exporting…",
+  "importTitle": "Import…",
+  "importSubtitle": "Restore entries from a .thevault file.",
+  "importPassword": "File password",
+  "importWrongPassword": "Wrong password or damaged file.",
+  "importSummary": "{items} entries, {files} attachments",
+  "@importSummary": {
+    "placeholders": {
+      "items": {
+        "type": "int"
+      },
+      "files": {
+        "type": "int"
+      }
+    }
+  },
+  "importDone": "{count, plural, =1{1 entry imported} other{{count} entries imported}}",
+  "@importDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "importing": "Importing…",
+  "accountEmail": "Email",
+  "accountServer": "Server",
+  "version": "Version",
+  "signOut": "Sign out of this device",
+  "signOutConfirm": "All data on this device will be deleted. Your passwords stay safe on the server and on your other devices.",
+  "lockNow": "Lock",
+  "deviceRevoked": "This device was disconnected from your account."
+}
