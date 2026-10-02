@@ -153,10 +153,12 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T5.4** Appunti con svuotamento automatico, apertura e salvataggio file, trascinamento
 
 ### Fase 6 — Pacchetti e rilascio
-- [ ] **T6.1** Build macOS (`.dmg`) con GitHub Actions
-- [ ] **T6.2** Build Windows (installer `.exe`) con GitHub Actions
-- [ ] **T6.3** Server per Mac mini: programma e script di installazione
-- [ ] **T6.4** Pubblicazione della release su GitHub
+- [~] **T6.1** Build macOS (`.dmg`) con GitHub Actions. *Pronta e controllata; girerà al primo push.*
+- [~] **T6.2** Build Windows (installer `.exe`) con GitHub Actions. *Installer provato davvero (con Wine); la build
+  completa girerà al primo push.*
+- [x] **T6.3** Server per Mac mini: programma e script di installazione
+- [!] **T6.4** Pubblicazione della release su GitHub. *Bloccata dal push (403): basta creare la versione `v1.0.0`
+  quando il push funziona.*
 
 ### Fase 7 — Guide (in italiano, passo passo)
 - [ ] **T7.1** Installare il server sul Mac mini (email, accesso da fuori casa, backup)
@@ -404,3 +406,33 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
     del Wi-Fi e il tuo nome utente: sostituiti con i classici dati d'esempio di "Mario Rossi".
 - **Test dopo la Fase 5**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti; app analyze 0 problemi, **52 test** verdi
   (+2 strumenti saltati di proposito). App vera su Linux: Ctrl+L dentro le Impostazioni → bloccata e finestra chiusa.
+
+- **Fase 6 🟡 Pacchetti e rilascio** (pronti; manca solo il push per pubblicarli):
+  - **Rilascio automatico** (`.github/workflows/release.yml`): creando la versione `v1.0.0` su GitHub partono i test e
+    poi si costruiscono **TheVault-macOS.dmg** (Mac Apple Silicon e Intel), **TheVault-Windows-Setup.exe**, il server
+    per Mac mini (Apple Silicon e Intel), lo script di installazione e le "impronte" SHA-256 di ogni file; poi tutto viene
+    pubblicato nella pagina Releases con le istruzioni in italiano. I nomi dei file non cambiano mai, così i link
+    "ultima versione" delle guide funzionano sempre.
+  - **Installer Windows** (Inno Setup 6.7.3, scaricato con impronta verificata): installa **solo per il tuo utente**
+    (nessuna password di amministratore), in italiano o inglese secondo Windows, icona nel menu Start e (a scelta) sul
+    desktop, disinstallazione da Impostazioni → App. Include le librerie Microsoft Visual C++ che Flutter non mette:
+    senza, su un PC "pulito" l'app non si sarebbe nemmeno aperta. **Provato davvero con Wine**: compilato, installato
+    in silenzio (cartella, collegamenti, voce in "App installate" con nome, versione ed editore) e disinstallato.
+  - **Server per il Mac mini**: un solo comando nel Terminale
+    (`curl -fsSL …/install-server.sh | bash`) scarica il programma giusto per il processore, **controlla l'impronta**
+    e poi: la prima volta avvia la configurazione guidata, le volte successive **aggiorna** (nuovo comando
+    `thevault-server upgrade`: backup di sicurezza, sostituzione del programma, riavvio del servizio e verifica che
+    risponda proprio la nuova versione). Provato su Linux simulando macOS e GitHub: download, file manomesso
+    rifiutato, scelta tra prima installazione e aggiornamento. Verificato che il programma per Apple Silicon ha la firma
+    "ad-hoc" che macOS richiede.
+  - 🔴→🟢 *Problema serio trovato e risolto*: **i backup automatici sul Mac mini sarebbero falliti in silenzio.** La
+    cartella proposta era su iCloud Drive, ma macOS non lascia scrivere lì (né su Scrivania, Documenti, Download o dischi
+    esterni) un servizio in background, e non può nemmeno chiedere il permesso. Ora: cartella predefinita
+    `~/The Vault Backup` nella tua Home; la configurazione rifiuta le cartelle bloccate spiegando perché; ogni backup
+    registra l'esito e `thevault-server status` mostra "✓ ultimo riuscito il…" oppure "✗ non riuscito: motivo".
+    Per avere una copia anche fuori dal Mac mini: Time Machine (lo spiegherà la guida). Il primo backup parte 30 secondi
+    dopo l'avvio del server (prima: 2 minuti).
+  - Controlli in più: formattazione del codice Go (`gofmt`) nei test e su GitHub; controllo dei workflow con
+    `actionlint` e degli script con `shellcheck`.
+- **Test dopo la Fase 6**: `scripts/test-all.sh` → ✅ server 6/6 pacchetti (+3 test nuovi); app analyze 0 problemi,
+  52 test verdi.
