@@ -168,6 +168,15 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T8.3** Revisione visiva: schermate in chiaro/scuro, italiano/inglese → [`docs/screenshots/`](docs/screenshots/)
 - [x] **T8.4** Consegna: riepilogo, limiti noti, prossimi passi → sezione 5 qui sotto
 
+### Fase 9 — Server anche su NVIDIA Jetson (Linux)
+- [x] **T9.1** Servizio Linux: servizio systemd dell'utente con *linger* (parte all'accensione senza accesso), stato,
+  aggiornamento, disinstallazione. Il percorso del Mac mini resta identico.
+- [x] **T9.2** Configurazione guidata, Tailscale Funnel e `status` adattati a Linux
+- [x] **T9.3** Script di installazione e rilascio: `thevault-server-linux-arm64` (Jetson) e `-amd64`
+- [x] **T9.4** Test su GitHub anche su un computer ARM64 come il Jetson, con il servizio systemd vero
+- [x] **T9.5** Guida passo passo → [`docs/guida-server-jetson.md`](docs/guida-server-jetson.md)
+- [ ] **T9.6** Nuova versione pubblicata con i file per Linux (serve il tuo ok)
+
 ---
 
 ## 3. Fasi future (dopo il desktop)
@@ -516,26 +525,70 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
   sandbox" e "accesso alla rete" su entrambi i processori. È l'ultima versione, quella a cui puntano i link delle guide.
   La 1.0.0 resta nell'elenco delle Releases: non usarla (puoi eliminarla dalla pagina, se vuoi).
 
+### 2026-10-21 — Il server anche su un NVIDIA Jetson
+
+- **Richiesta**: poter usare come server un **NVIDIA Jetson Orin Nano 8 GB** invece del Mac mini, senza toccare quello
+  che c'è già per il Mac. Ho riletto tutto il progetto: il server era già quasi pronto, perché è un solo programma Go
+  senza dipendenze dal sistema (anche il database SQLite è scritto in Go). Erano legati al Mac solo l'avvio automatico
+  (launchd), qualche testo della configurazione, lo script di installazione e i file della release.
+- **Su Linux il server è un servizio systemd del tuo utente**, il gemello del LaunchAgent del Mac: niente amministratore
+  per installarlo e aggiornarlo, si riavvia da solo se si ferma, registro nello stesso `server.log`. In più, una volta
+  sola durante la configurazione (con la password di `sudo`), il *linger*: senza, il server si spegnerebbe chiudendo la
+  sessione SSH e non ripartirebbe dopo un riavvio. Con il *linger* il Jetson riparte da solo **senza che nessuno faccia
+  l'accesso** (meglio del Mac mini con FileVault).
+- **Configurazione guidata** con testi per Linux (Tailscale si installa con un comando, i backup vanno in
+  `~/thevault-backup`, nessuna cartella vietata come su macOS); Funnel si attiva con `sudo`, perché su Linux solo
+  l'amministratore può pubblicare servizi con Tailscale. `status` mostra anche «Avvio automatico» (✓, oppure ⚠ con il
+  comando per sistemarlo). Rifiuta di girare con `sudo`: il server deve stare nel tuo utente.
+- **Script di installazione**: lo stesso comando `curl … | bash`; su Linux scarica il programma ARM64 (o x86-64),
+  controlla l'impronta e rende disponibile `thevault-server` nelle nuove sessioni (`~/.local/bin`). Sul Mac fa
+  esattamente quello che faceva prima.
+- **Release**: in più `thevault-server-linux-arm64.tar.gz` e `thevault-server-linux-amd64.tar.gz`.
+- **Sicurezza**: le password restano cifrate end-to-end come sempre. Il Jetson di solito non ha il disco cifrato, quindi
+  la guida consiglia una **casella email dedicata** all'invio dei codici: chi rubasse il Jetson troverebbe solo la
+  password per le app di quella casella. La cifratura del disco di NVIDIA è spiegata come opzione per esperti (richiede
+  di reinstallare il sistema e una chiave propria al posto di quella d'esempio).
+- **Guida** [`docs/guida-server-jetson.md`](docs/guida-server-jetson.md), collegata da README, guida del server e guida
+  dell'app; c'è anche come passare dal Mac mini al Jetson senza perdere nulla (esporta → nuovo server → importa).
+- **Test**: 7 test nuovi (file del servizio con percorsi "difficili", installazione e disinstallazione con un finto
+  `systemctl`, utente senza servizi, *linger* sì/no, configurazione guidata su Linux) più tutti quelli di prima, verdi.
+  Programma compilato per Mac (Apple Silicon e Intel) e Linux (ARM64 e x86-64); `shellcheck` e `actionlint` puliti.
+  Il programma Mac, provato davvero qui (questa volta lavoro su un Mac), si comporta come prima. Lo script di
+  installazione provato simulando un Jetson: download, file manomesso rifiutato, `sudo` rifiutato, aggiornamento.
+  - 🟡 *Scivoloni (risolti)*: un test nuovo falliva sul Mac perché macOS non usa la cartella di configurazione di Linux
+    (ora il test chiede il percorso al programma); `actionlint` ha segnalato un piccolo difetto in uno script della CI.
+- **CI su GitHub: tutto ✅** ([giro del 21 ottobre](https://github.com/simonescoca/the.vault/actions/runs/39530298913)):
+  test del server su x86 e, nuovo, su un computer **ARM64** (lo stesso processore del Jetson); lì il server è stato
+  **installato davvero come servizio systemd**, con `status` «✓ parte da solo a ogni accensione», poi **ucciso di
+  colpo e ripartito da solo**, poi disinstallato. Anche test dell'app e compilazioni Mac e Windows verdi.
+- ⚠️ *Da verificare sul Jetson vero*: la richiesta della password di `sudo` dentro la configurazione e l'attivazione di
+  Funnel su Linux. Il resto (servizio, riavvio dopo un crash, stato, disinstallazione) gira già sul computer ARM64 di
+  GitHub.
+
 ---
 
 ## 5. Consegna
 
 ### Cosa c'è
-- **Server per il Mac mini** (Go): accesso con codice email, approvazione dei nuovi dispositivi con codice di verifica,
-  sincronizzazione cifrata in tempo reale, allegati, backup notturni, installazione e aggiornamento con un comando,
-  accesso da fuori casa con Tailscale Funnel.
+- **Server per il Mac mini o per Linux, per esempio NVIDIA Jetson** (Go): accesso con codice email, approvazione dei
+  nuovi dispositivi con codice di verifica, sincronizzazione cifrata in tempo reale, allegati, backup notturni,
+  installazione e aggiornamento con un comando, accesso da fuori casa con Tailscale Funnel.
 - **App per Mac e Windows** (Flutter): tutte le funzioni richieste (sezione 1) e gli extra scelti (generatore di
   password, preferiti, esportazione, riordino delle righe), tema chiaro/scuro, italiano/inglese, Touch ID / Windows Hello
   con PIN di riserva, funzionamento offline, gestione dei conflitti senza perdere nulla.
 - **Pacchetti**: rilascio automatico su GitHub (`.dmg`, installer Windows, server).
-- **Guide in italiano**: [server](docs/guida-server.md) e [app](docs/guida-app.md).
+- **Guide in italiano**: [server sul Mac mini](docs/guida-server.md), [server sul Jetson](docs/guida-server-jetson.md)
+  e [app](docs/guida-app.md).
 - **Qualità**: 60 test dell'app (inclusi 18 sull'interfaccia vera e uno con il server vero e 4 dispositivi), 6 pacchetti di
   test del server, controlli automatici del codice; prove sull'app vera con schermate.
 
 ### Cosa devi fare tu
 1. ~~Sbloccare GitHub~~ ✅ fatto.
 2. ~~Pubblicare~~ ✅ fatto: [versione 1.0.1](https://github.com/simonescoca/the.vault/releases/latest).
-3. Seguire la [guida del server](docs/guida-server.md) sul Mac mini, poi la [guida dell'app](docs/guida-app.md).
+3. Seguire la [guida del server](docs/guida-server.md) sul Mac mini (oppure [quella per il Jetson](docs/guida-server-jetson.md)),
+   poi la [guida dell'app](docs/guida-app.md).
+4. Per il Jetson: dare l'ok a una **nuova versione** (T9.6). Finché non esce, il comando di installazione scarica la
+   1.0.1, che non contiene ancora il server per Linux.
 
 ### Limiti noti
 - **Mai usato su un Mac o un PC Windows veri** (qui ho solo Linux): le app per Mac e Windows sono compilate da GitHub
@@ -544,6 +597,8 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - App non firmata con un certificato a pagamento: al primo avvio macOS e Windows chiedono conferma (spiegato nella
   guida); dopo ogni aggiornamento su Mac, una volta la password per il Portachiavi.
 - Ripristinare il server da un backup non è ancora gestito dall'app (sezione Fase 7): il paracadute è l'esportazione.
+- I due messaggi dell'app sul server («…configurazione del server sul Mac mini», «…che il Mac mini sia acceso») nominano
+  ancora il Mac mini anche se il server è sul Jetson.
 - Con la tastiera, Tab si muove tra i campi di testo ma non tra i pulsanti (come macOS di serie).
 
 ### Prossimi passi possibili
