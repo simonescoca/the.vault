@@ -33,6 +33,52 @@ jobs:
       - name: Cross-compile for the Mac mini (darwin/arm64)
         run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o "$RUNNER_TEMP/thevault-server" ./cmd/thevault-server
 
+  server-linux-arm64:
+    name: Server (Go) — Linux ARM64 (Jetson)
+    runs-on: ubuntu-24.04-arm
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - run: go test -race -count=1 ./...
+      - name: Systemd user service — install (upgrade), status, restart after a crash, uninstall
+        run: |
+          CGO_ENABLED=0 go build -ldflags "-X main.version=ci" -o "$RUNNER_TEMP/thevault-server" ./cmd/thevault-server
+          bin="$RUNNER_TEMP/thevault-server"
+          # As on the Jetson: the user's services run without a login session (linger).
+          sudo loginctl enable-linger "$USER"
+          XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export XDG_RUNTIME_DIR
+          for _ in $(seq 50); do [ -S "$XDG_RUNTIME_DIR/bus" ] && break; sleep 0.2; done
+          data="$HOME/.thevault-server"
+          mkdir -p "$data"
+          secret="$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')"
+          printf '{"listen":"127.0.0.1:8743","allowedEmails":["me@example.com"],"serverSecret":"%s","mailMode":"log"}\n' \
+            "$secret" >"$data/config.json"
+          healthy() {
+            for _ in $(seq 60); do curl -fsS http://127.0.0.1:8743/v1/health && return 0; sleep 0.5; done
+            cat "$data/server.log"
+            return 1
+          }
+          "$bin" upgrade
+          systemctl --user is-active thevault-server.service
+          healthy
+          "$bin" status | tee "$RUNNER_TEMP/status.txt"
+          grep -q "Avvio automatico: ✓" "$RUNNER_TEMP/status.txt"
+          # Killed, it comes back by itself (Restart=always).
+          pid="$(systemctl --user show -p MainPID --value thevault-server.service)"
+          systemctl --user kill --signal=KILL thevault-server.service
+          sleep 1
+          healthy
+          [ "$(systemctl --user show -p MainPID --value thevault-server.service)" != "$pid" ]
+          "$bin" uninstall
+          if systemctl --user is-active thevault-server.service; then exit 1; fi
+
   app-test:
     name: App (Flutter) — analyze & test
     runs-on: ubuntu-latest

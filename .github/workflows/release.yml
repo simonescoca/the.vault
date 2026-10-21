@@ -5,6 +5,7 @@ name: Release
 #   TheVault-macOS.dmg               the Mac app (Apple Silicon and Intel)
 #   TheVault-Windows-Setup.exe       the Windows installer (Windows 10/11, 64 bit)
 #   thevault-server-macos-*.tar.gz   the server for the Mac mini
+#   thevault-server-linux-*.tar.gz   the server for Linux (arm64: e.g. NVIDIA Jetson; amd64)
 #   install-server.sh                installs or updates the server
 #   SHA256SUMS.txt                   fingerprints, checked by install-server.sh
 
@@ -71,7 +72,7 @@ jobs:
           flutter test
 
   server:
-    name: Server (Mac mini)
+    name: Server (Mac mini e Linux)
     needs: [version, test]
     runs-on: ubuntu-latest
     env:
@@ -82,15 +83,19 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
-      - name: Build for Apple Silicon and Intel
+      - name: Build for macOS (Apple Silicon and Intel) and Linux (ARM64, e.g. NVIDIA Jetson, and x86-64)
         working-directory: server
         run: |
           mkdir -p dist
-          for arch in arm64 amd64; do
-            mkdir -p "build/$arch"
-            GOOS=darwin GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
-              -o "build/$arch/thevault-server" ./cmd/thevault-server
-            tar -C "build/$arch" -czf "dist/thevault-server-macos-$arch.tar.gz" thevault-server
+          for os in darwin linux; do
+            name=$os
+            if [ "$os" = darwin ]; then name=macos; fi
+            for arch in arm64 amd64; do
+              mkdir -p "build/$os-$arch"
+              GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+                -o "build/$os-$arch/thevault-server" ./cmd/thevault-server
+              tar -C "build/$os-$arch" -czf "dist/thevault-server-$name-$arch.tar.gz" thevault-server
+            done
           done
           cp ../scripts/install-server.sh dist/
       - uses: actions/upload-artifact@v4
@@ -208,11 +213,12 @@ jobs:
 
           - **Mac** (Apple Silicon e Intel, macOS 12 o più recente): [TheVault-macOS.dmg]($base/releases/download/v$VERSION/TheVault-macOS.dmg)
           - **Windows** 10 e 11: [TheVault-Windows-Setup.exe]($base/releases/download/v$VERSION/TheVault-Windows-Setup.exe)
-          - **Server** per il Mac mini: nel Terminale
+          - **Server** per il Mac mini o per Linux (per esempio un NVIDIA Jetson): nel Terminale
             \`curl -fsSL $base/releases/latest/download/install-server.sh | bash\`
             (lo stesso comando aggiorna un server già installato)
 
-          Guide passo passo: [installare il server]($base/blob/main/docs/guida-server.md) ·
+          Guide passo passo: [installare il server sul Mac mini]($base/blob/main/docs/guida-server.md) ·
+          [sul Jetson]($base/blob/main/docs/guida-server-jetson.md) ·
           [installare l'app]($base/blob/main/docs/guida-app.md)
           EOF
           gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" --title "The Vault $VERSION" \

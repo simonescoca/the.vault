@@ -67,7 +67,8 @@ func Default(dataDir string) *Config {
 	}
 }
 
-// DefaultDataDir is ~/Library/Application Support/TheVaultServer on macOS and ~/.thevault-server elsewhere.
+// DefaultDataDir is ~/Library/Application Support/TheVaultServer on macOS and ~/.thevault-server elsewhere
+// (Linux; scripts/install-server.sh uses the same folders).
 func DefaultDataDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {

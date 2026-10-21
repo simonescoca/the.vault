@@ -1,7 +1,8 @@
 # The Vault
 
 Gestore di password personale, minimal e intuitivo, sincronizzato in tempo reale tra i tuoi dispositivi
-tramite un server tuo (un Mac mini sempre acceso). Cifratura end-to-end: il server conserva solo dati illeggibili.
+tramite un server tuo (un Mac mini o un NVIDIA Jetson sempre acceso). Cifratura end-to-end: il server conserva solo
+dati illeggibili.
 
 ![The Vault, tema chiaro](docs/screenshots/vault-light.png)
 
@@ -11,14 +12,15 @@ tramite un server tuo (un Mac mini sempre acceso). Cifratura end-to-end: il serv
 
 ## Installazione
 
-1. **Server sul Mac mini**: [guida passo passo](docs/guida-server.md).
+1. **Server sul Mac mini**: [guida passo passo](docs/guida-server.md) — oppure su un **NVIDIA Jetson** (o un altro
+   computer Linux con systemd): [guida passo passo](docs/guida-server-jetson.md).
 2. **App su Mac e Windows**: [guida passo passo](docs/guida-app.md) — download nella pagina
    [Releases](https://github.com/simonescoca/the.vault/releases/latest).
 
 ## Struttura
 
 - **App desktop**: macOS e Windows (Flutter) — cartella [`app/`](app/)
-- **Server**: per il Mac mini (Go) — cartella [`server/`](server/)
+- **Server**: per il Mac mini o Linux, per esempio NVIDIA Jetson (Go) — cartella [`server/`](server/)
 - **Documentazione**: cartella [`docs/`](docs/)
 - **Piano di lavoro e diario di sviluppo**: [`todo.md`](todo.md)
 
