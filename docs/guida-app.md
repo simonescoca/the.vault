@@ -1,7 +1,8 @@
 # Guida: l'app The Vault su Mac e Windows
 
-Prima di iniziare serve il **server** sul Mac mini (vedi la [guida del server](guida-server.md)) e il suo
-**indirizzo**, quello mostrato alla fine della configurazione (per esempio `mac-mini.tail1234.ts.net`).
+Prima di iniziare serve il **server** sul Mac mini o sul Jetson (vedi la [guida del server](guida-server.md) o quella
+[per il Jetson](guida-server-jetson.md)) e il suo **indirizzo**, quello mostrato alla fine della configurazione (per
+esempio `mac-mini.tail1234.ts.net`).
 
 ---
 

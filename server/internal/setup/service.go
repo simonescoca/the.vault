@@ -19,6 +19,8 @@ import (
 	"github.com/simonescoca/the.vault/server/internal/config"
 )
 
+// The macOS background service: a LaunchAgent, started when the user logs in and kept alive by launchd.
+
 // Label is the launchd service name.
 const Label = "it.simonescoca.thevault.server"
 
@@ -112,11 +114,30 @@ func launchctl(args ...string) (string, error) {
 
 func guiDomain() string { return "gui/" + strconv.Itoa(os.Getuid()) }
 
-// InstallService copies the program into the data folder and (re)starts it as a LaunchAgent.
+// InstallService copies the program into the data folder and (re)starts it as a background service:
+// a LaunchAgent on macOS, a systemd user service on Linux (systemd.go).
 func InstallService(cfg *config.Config) error {
-	if runtime.GOOS != "darwin" {
-		return errors.New("l'avvio automatico è disponibile solo su macOS: avvia a mano con 'thevault-server serve'")
+	switch runtime.GOOS {
+	case "darwin":
+		return installLaunchAgent(cfg)
+	case "linux":
+		return installSystemdUnit(cfg)
 	}
+	return errors.New("l'avvio automatico è disponibile solo su macOS e Linux: avvia a mano con 'thevault-server serve'")
+}
+
+// Uninstall removes the background service. Data and configuration are kept.
+func Uninstall(dataDir string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return uninstallLaunchAgent(dataDir)
+	case "linux":
+		return uninstallSystemdUnit(dataDir)
+	}
+	return errors.New("disponibile solo su macOS e Linux")
+}
+
+func installLaunchAgent(cfg *config.Config) error {
 	bin := BinPath(cfg.DataDir)
 	if err := copyExecutable(bin); err != nil {
 		return fmt.Errorf("copia del programma: %w", err)
@@ -137,11 +158,7 @@ func InstallService(cfg *config.Config) error {
 	return nil
 }
 
-// Uninstall removes the background service. Data and configuration are kept.
-func Uninstall(dataDir string) error {
-	if runtime.GOOS != "darwin" {
-		return errors.New("disponibile solo su macOS")
-	}
+func uninstallLaunchAgent(dataDir string) error {
 	_, _ = launchctl("bootout", guiDomain()+"/"+Label)
 	if err := os.Remove(plistPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err

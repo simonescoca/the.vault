@@ -163,7 +163,7 @@ func TestWizardRefusesICloudBackupFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Backup.Dir != defaultBackupDir() {
+	if cfg.Backup.Dir != defaultBackupDir("darwin") {
 		t.Errorf("backup folder: %s", cfg.Backup.Dir)
 	}
 	if !strings.Contains(out.String(), "iCloud Drive: macOS non lascerebbe") {

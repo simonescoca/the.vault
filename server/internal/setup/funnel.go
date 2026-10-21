@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 	"github.com/simonescoca/the.vault/server/internal/config"
 )
 
-// tailscaleCLI finds the Tailscale command line tool (Homebrew/CLI install or the Mac app).
+// tailscaleCLI finds the Tailscale command line tool (on Linux, or a Homebrew/CLI install, it is in the PATH;
+// otherwise the Mac app).
 func tailscaleCLI() string {
 	if p, err := exec.LookPath("tailscale"); err == nil {
 		return p
@@ -53,7 +55,7 @@ func tailscaleStatus(cli string) (*tsStatus, error) {
 	return &st, nil
 }
 
-// PublicHost returns the Funnel host name (without scheme) of this Mac, if Tailscale is running.
+// PublicHost returns the Funnel host name (without scheme) of this computer, if Tailscale is running.
 func PublicHost() string {
 	cli := tailscaleCLI()
 	if cli == "" {
@@ -66,17 +68,37 @@ func PublicHost() string {
 	return strings.TrimSuffix(st.Self.DNSName, ".")
 }
 
+// runFunnel runs a Tailscale command, showing its output (it may contain the link to enable Funnel).
+func (w *Wizard) runFunnel(args []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, w.Out, w.Out
+	return cmd.Run()
+}
+
 func setupFunnel(w *Wizard, cfg *config.Config) error {
-	w.say("     Per usare The Vault fuori casa il Mac mini deve essere raggiungibile da internet in modo sicuro.")
+	if w.linux() {
+		w.say("     Per usare The Vault fuori casa questo computer deve essere raggiungibile da internet in modo sicuro.")
+	} else {
+		w.say("     Per usare The Vault fuori casa il Mac mini deve essere raggiungibile da internet in modo sicuro.")
+	}
 	w.say("     Usiamo Tailscale Funnel: gratuito, HTTPS automatico, nessuna modifica al router.")
 	for {
 		cli := tailscaleCLI()
 		if cli == "" {
 			w.say("")
 			w.say("     Tailscale non è installato. Fai così:")
-			w.say("       1. Scarica e installa Tailscale per Mac: https://tailscale.com/download/mac")
-			w.say("       2. Aprilo e accedi (va bene il tuo account Apple, Google o Microsoft).")
-			w.say("       3. Nel menu di Tailscale attiva «Launch at login» (avvio all'accesso).")
+			if w.linux() {
+				w.say("       1. In un altro terminale installalo:  curl -fsSL https://tailscale.com/install.sh | sh")
+				w.say("       2. Collegalo al tuo account:  sudo tailscale up")
+				w.say("          e apri nel browser il link che compare (va bene il tuo account Apple, Google o Microsoft).")
+				w.say("          Da allora Tailscale parte da solo a ogni accensione.")
+			} else {
+				w.say("       1. Scarica e installa Tailscale per Mac: https://tailscale.com/download/mac")
+				w.say("       2. Aprilo e accedi (va bene il tuo account Apple, Google o Microsoft).")
+				w.say("       3. Nel menu di Tailscale attiva «Launch at login» (avvio all'accesso).")
+			}
 			again, err := w.askYesNo("     Fatto? Riprovo adesso?", true)
 			if err != nil {
 				return err
@@ -88,7 +110,12 @@ func setupFunnel(w *Wizard, cfg *config.Config) error {
 		}
 		st, err := tailscaleStatus(cli)
 		if err != nil || st.BackendState != "Running" || st.Self.DNSName == "" {
-			w.say("     Tailscale è installato ma non è collegato: aprilo e accedi al tuo account.")
+			if w.linux() {
+				w.say("     Tailscale è installato ma non è collegato: in un altro terminale esegui  sudo tailscale up")
+				w.say("     e apri nel browser il link che compare.")
+			} else {
+				w.say("     Tailscale è installato ma non è collegato: aprilo e accedi al tuo account.")
+			}
 			again, err := w.askYesNo("     Fatto? Riprovo adesso?", true)
 			if err != nil {
 				return err
@@ -104,18 +131,16 @@ func setupFunnel(w *Wizard, cfg *config.Config) error {
 		}
 		w.say("     Attivo Tailscale Funnel… Se compare un link, aprilo nel browser e conferma: è la")
 		w.say("     richiesta di Tailscale di abilitare Funnel sul tuo account (si fa una volta sola).")
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		cmd := exec.CommandContext(ctx, cli, "funnel", "--bg", "--yes", port)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, w.Out, w.Out
-		err = cmd.Run()
-		cancel()
+		var sudo []string
+		if w.linux() && os.Geteuid() != 0 {
+			// On Linux only root (or the Tailscale "operator") may change what Tailscale publishes.
+			w.say("     Se richiesta, inserisci la password di amministratore.")
+			sudo = []string{"sudo"}
+		}
+		err = w.runFunnel(append(sudo, cli, "funnel", "--bg", "--yes", port))
 		if err != nil {
 			// Older CLIs do not know --yes.
-			ctx, cancel = context.WithTimeout(context.Background(), 10*time.Minute)
-			cmd = exec.CommandContext(ctx, cli, "funnel", "--bg", port)
-			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, w.Out, w.Out
-			err = cmd.Run()
-			cancel()
+			err = w.runFunnel(append(sudo, cli, "funnel", "--bg", port))
 		}
 		if err != nil {
 			w.say("     ✗ Tailscale Funnel non si è attivato (%v).", err)
@@ -165,6 +190,9 @@ func Status(dataDir string) error {
 	} else {
 		fmt.Println("  Server locale:    ✓ attivo su", localURL(cfg))
 	}
+	if runtime.GOOS == "linux" {
+		fmt.Println("  Avvio automatico:", systemdSummary())
+	}
 	if cfg.PublicURL == "" {
 		fmt.Println("  Fuori casa:       ✗ non configurato (riesegui 'thevault-server setup')")
 	} else if err := checkHealth(cfg.PublicURL); err != nil {
@@ -189,7 +217,11 @@ func backupSummary(cfg *config.Config) string {
 	}
 	msg := "✗ l'ultimo (" + when(st.LastAttempt) + ") non è riuscito: " + st.LastError
 	if strings.Contains(st.LastError, "operation not permitted") || strings.Contains(st.LastError, "permission denied") {
-		msg += "\n                    macOS non lascia scrivere il server in " + backup.Dir(cfg) +
+		who := "macOS non lascia scrivere il server"
+		if runtime.GOOS == "linux" {
+			who = "il server non ha il permesso di scrivere"
+		}
+		msg += "\n                    " + who + " in " + backup.Dir(cfg) +
 			": esegui 'thevault-server setup' e scegli la cartella proposta."
 	}
 	if st.LastSuccess != 0 {

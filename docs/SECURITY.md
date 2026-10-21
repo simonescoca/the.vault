@@ -173,13 +173,19 @@ quell'account si sospendono per un'ora. Ogni nuovo collegamento genera un'email 
   dell'app (impostazioni, approvazione di un nuovo dispositivo, kit di emergenza…), i menu e i messaggi: sopra la
   schermata di blocco non resta nulla. I file temporanei degli allegati aperti vengono cancellati.
 
-## 10. Server (Mac mini)
+## 10. Server (Mac mini o Linux, per esempio NVIDIA Jetson)
 
 - Ascolta solo su `127.0.0.1`; è esposto su internet da **Tailscale Funnel**, che fornisce HTTPS con certificato valido.
+- Gira con l'utente di chi lo installa, mai come amministratore: su macOS come LaunchAgent, su Linux come servizio
+  systemd dell'utente (con *linger*, per partire all'accensione senza accesso). Su Linux la configurazione rifiuta
+  `sudo`; servono privilegi solo una volta, per *linger* e per attivare Funnel.
 - Token dei dispositivi salvati come SHA-256; confronti a tempo costante; limiti di velocità sugli endpoint di accesso;
   dimensioni massime delle richieste (JSON 1 MiB, blocchi di allegato 8 MiB, allegato intero 200 MiB + margine).
 - I log non contengono codici, token o contenuti.
 - Cartella dati con permessi `0700`. Backup giornalieri (già cifrati end-to-end) in una cartella a scelta.
+- In chiaro sul disco del server c'è solo `config.json` (`0600`): la chiave dei codici email e la password per le app
+  della casella che li invia. Sul Mac mini la protegge FileVault; sul Jetson, che di solito non ha il disco cifrato,
+  la guida consiglia una casella dedicata all'invio dei codici.
 - Un dispositivo disconnesso perde subito l'accesso: il suo token viene cancellato e, se è connesso, riceve l'ordine di
   cancellare i dati locali.
 

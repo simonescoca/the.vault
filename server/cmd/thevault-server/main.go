@@ -1,4 +1,5 @@
-// Command thevault-server is the sync server of The Vault, meant to run on an always-on Mac (the Mac mini).
+// Command thevault-server is the sync server of The Vault, meant to run on an always-on Mac (the Mac mini)
+// or Linux computer (for example an NVIDIA Jetson).
 //
 //	thevault-server setup     interactive configuration (Italian) + automatic start
 //	thevault-server serve     run the server (used by the background service)

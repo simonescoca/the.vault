@@ -6,6 +6,9 @@ dati illeggibili.
 
 Tempo necessario: circa **20 minuti**, una volta sola.
 
+> Al posto del Mac mini vuoi usare un **NVIDIA Jetson** (o un altro computer Linux)? Segui la
+> [guida per il Jetson](guida-server-jetson.md).
+
 **Cosa ti serve**
 - il Mac mini, acceso e collegato a internet;
 - la tua email (le istruzioni sono per **iCloud**; vanno bene anche Gmail o altri servizi);

@@ -1,4 +1,5 @@
-// Package setup implements the interactive configuration (in Italian) and the macOS background service.
+// Package setup implements the interactive configuration (in Italian) and the background service: a LaunchAgent
+// on macOS (the Mac mini), a systemd user service on Linux (for example an NVIDIA Jetson).
 package setup
 
 import (
@@ -9,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -25,21 +27,29 @@ type Wizard struct {
 	Out     io.Writer
 	DataDir string
 	Version string
+	// OS is runtime.GOOS: "linux" changes some messages and steps; anything else is the Mac mini.
+	OS string
 
 	ReadPassword   func(prompt string) (string, error)
 	SendTestMail   func(cfg *config.Config) error
 	InstallService func(cfg *config.Config) error
 	WaitHealthy    func(cfg *config.Config) error
-	SetupFunnel    func(w *Wizard, cfg *config.Config) error
+	// StartAtBoot, if set, makes the installed service start at boot (Linux: linger).
+	StartAtBoot func(w *Wizard) error
+	SetupFunnel func(w *Wizard, cfg *config.Config) error
 }
 
 // Run is the entry point of `thevault-server setup`.
 func Run(dataDir, version string) error {
+	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
+		return errors.New(notRootLinux)
+	}
 	w := &Wizard{
 		In:      bufio.NewReader(os.Stdin),
 		Out:     os.Stdout,
 		DataDir: dataDir,
 		Version: version,
+		OS:      runtime.GOOS,
 		ReadPassword: func(prompt string) (string, error) {
 			fmt.Print(prompt)
 			b, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -57,8 +67,13 @@ func Run(dataDir, version string) error {
 		WaitHealthy:    WaitHealthy,
 		SetupFunnel:    setupFunnel,
 	}
+	if w.linux() {
+		w.StartAtBoot = enableLinger
+	}
 	return w.Run()
 }
+
+func (w *Wizard) linux() bool { return w.OS == "linux" }
 
 func (w *Wizard) say(format string, a ...any) { fmt.Fprintf(w.Out, format+"\n", a...) }
 
@@ -143,12 +158,20 @@ func (w *Wizard) Run() error {
 	// 3. Backups
 	w.say("3/5  Backup automatici")
 	w.say("     Ogni notte il server salva una copia dei dati (già cifrati: nessuno può leggerli).")
-	w.say("     Lascia la cartella proposta: macOS non permette ai servizi in background di scrivere su")
-	w.say("     iCloud Drive, Scrivania, Documenti, Download o dischi esterni. Per avere una copia anche")
-	w.say("     fuori dal Mac mini, attiva Time Machine: copierà anche questa cartella.")
+	blocked := BlockedBackupLocation
+	if w.linux() {
+		// No folder is off limits for a systemd service.
+		blocked = func(string) string { return "" }
+		w.say("     Va bene la cartella proposta. Per avere una copia anche fuori da questo computer, copiala")
+		w.say("     ogni tanto altrove (per esempio con rsync su un altro computer).")
+	} else {
+		w.say("     Lascia la cartella proposta: macOS non permette ai servizi in background di scrivere su")
+		w.say("     iCloud Drive, Scrivania, Documenti, Download o dischi esterni. Per avere una copia anche")
+		w.say("     fuori dal Mac mini, attiva Time Machine: copierà anche questa cartella.")
+	}
 	defDir := cfg.Backup.Dir
-	if defDir == "" || BlockedBackupLocation(defDir) != "" {
-		defDir = defaultBackupDir()
+	if defDir == "" || blocked(defDir) != "" {
+		defDir = defaultBackupDir(w.OS)
 	}
 	for {
 		dir, err := w.ask("     Cartella dei backup", defDir)
@@ -156,7 +179,7 @@ func (w *Wizard) Run() error {
 			return err
 		}
 		dir = expandHome(dir)
-		if where := BlockedBackupLocation(dir); where != "" {
+		if where := blocked(dir); where != "" {
 			w.say("     ⚠ %s: macOS non lascerebbe scrivere lì il server in background. Scegli un'altra cartella.", where)
 			continue
 		}
@@ -187,6 +210,11 @@ func (w *Wizard) Run() error {
 		return fmt.Errorf("il server non risponde: %w (vedi il registro in %s)", err, LogPath(w.DataDir))
 	}
 	w.say("     ✓ Il server è attivo su http://%s", cfg.Listen)
+	if w.StartAtBoot != nil {
+		if err := w.StartAtBoot(w); err != nil {
+			w.say("     ⚠ %v", err)
+		}
+	}
 	w.say("")
 
 	// 5. Access from outside home
@@ -209,7 +237,11 @@ func (w *Wizard) Run() error {
 		w.say("poi riesegui:  thevault-server setup")
 	}
 	w.say("")
-	w.say("Per controllare il server, in una nuova finestra del Terminale scrivi:  thevault-server status")
+	if w.linux() {
+		w.say("Per controllare il server, in un nuovo terminale (o una nuova sessione SSH) scrivi:  thevault-server status")
+	} else {
+		w.say("Per controllare il server, in una nuova finestra del Terminale scrivi:  thevault-server status")
+	}
 	w.say("(da questa finestra: %s status)", ShellCommand(BinPath(w.DataDir)))
 	return nil
 }
@@ -317,9 +349,13 @@ func (w *Wizard) configureMail(cfg *config.Config) error {
 	return nil
 }
 
-// defaultBackupDir is a visible folder in the home folder, where a background service may write.
-func defaultBackupDir() string {
+// defaultBackupDir is a visible folder in the home folder, where a background service may write
+// (on Linux without spaces, easier to type in a terminal).
+func defaultBackupDir(goos string) string {
 	home, _ := os.UserHomeDir()
+	if goos == "linux" {
+		return filepath.Join(home, "thevault-backup")
+	}
 	return filepath.Join(home, "The Vault Backup")
 }
 
