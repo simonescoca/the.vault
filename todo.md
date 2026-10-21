@@ -175,7 +175,7 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T9.3** Script di installazione e rilascio: `thevault-server-linux-arm64` (Jetson) e `-amd64`
 - [x] **T9.4** Test su GitHub anche su un computer ARM64 come il Jetson, con il servizio systemd vero
 - [x] **T9.5** Guida passo passo → [`docs/guida-server-jetson.md`](docs/guida-server-jetson.md)
-- [ ] **T9.6** Nuova versione pubblicata con i file per Linux (serve il tuo ok)
+- [x] **T9.6** Nuova versione pubblicata con i file per Linux → [versione 1.1.0](https://github.com/simonescoca/the.vault/releases/latest)
 
 ---
 
@@ -564,6 +564,14 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - ⚠️ *Da verificare sul Jetson vero*: la richiesta della password di `sudo` dentro la configurazione e l'attivazione di
   Funnel su Linux. Il resto (servizio, riavvio dopo un crash, stato, disinstallazione) gira già sul computer ARM64 di
   GitHub.
+- **Unito e pubblicato** (con il tuo ok): la [PR #1](https://github.com/simonescoca/the.vault/pull/1) è entrata nel
+  ramo principale e il rilascio automatico ha pubblicato la **versione 1.1.0** (versione "media" in più, perché è una
+  funzione nuova), tutto verde. È lei l'"ultima versione", quella dei comandi delle guide.
+- **Controllo dei file pubblicati** (scaricati dai link "ultima versione" delle guide): 8 file con le impronte tutte
+  corrette; lo script di installazione è identico a quello del progetto; ci sono i quattro server (Mac Apple Silicon e
+  Intel, Linux ARM64 per il Jetson e x86-64), ognuno per il sistema giusto, senza librerie esterne; il server Mac
+  risponde «1.1.0»; nel `.dmg` c'è The Vault 1.1.0 per Apple Silicon e Intel, senza il permesso di sviluppo
+  `get-task-allow`.
 
 ---
 
@@ -584,11 +592,10 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 
 ### Cosa devi fare tu
 1. ~~Sbloccare GitHub~~ ✅ fatto.
-2. ~~Pubblicare~~ ✅ fatto: [versione 1.0.1](https://github.com/simonescoca/the.vault/releases/latest).
+2. ~~Pubblicare~~ ✅ fatto: [versione 1.1.0](https://github.com/simonescoca/the.vault/releases/latest) (con il server per Linux).
 3. Seguire la [guida del server](docs/guida-server.md) sul Mac mini (oppure [quella per il Jetson](docs/guida-server-jetson.md)),
    poi la [guida dell'app](docs/guida-app.md).
-4. Per il Jetson: dare l'ok a una **nuova versione** (T9.6). Finché non esce, il comando di installazione scarica la
-   1.0.1, che non contiene ancora il server per Linux.
+4. ~~Per il Jetson: dare l'ok a una nuova versione~~ ✅ fatto: versione 1.1.0.
 
 ### Limiti noti
 - **Mai usato su un Mac o un PC Windows veri** (qui ho solo Linux): le app per Mac e Windows sono compilate da GitHub
