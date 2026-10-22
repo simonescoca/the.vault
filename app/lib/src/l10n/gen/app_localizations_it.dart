@@ -67,14 +67,14 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get serverSubtitle =>
-      'Inserisci l\'indirizzo mostrato alla fine della configurazione del server sul Mac mini.';
+      'Inserisci l\'indirizzo mostrato alla fine della configurazione del server.';
 
   @override
-  String get serverHint => 'es. mac-mini.tail1234.ts.net';
+  String get serverHint => 'es. server.tail1234.ts.net';
 
   @override
   String get serverUnreachable =>
-      'Server non raggiungibile. Controlla l\'indirizzo e che il Mac mini sia acceso.';
+      'Server non raggiungibile. Controlla l\'indirizzo e che il server sia acceso.';
 
   @override
   String get serverNotVault => 'Questo non è un server The Vault.';
@@ -185,7 +185,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get approvalCodeHint =>
-      'Controlla che sull\'altro dispositivo compaia lo stesso codice, poi approva da lì.';
+      'Controlla che sull\'altro dispositivo compaia lo stesso codice, approva da lì e poi conferma qui.';
 
   @override
   String get verificationCode => 'Codice di verifica';
@@ -206,6 +206,20 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get approvalInvalid =>
       'Qualcosa non torna: per sicurezza l\'approvazione è stata rifiutata.';
+
+  @override
+  String get codeMatches => 'Il codice coincide';
+
+  @override
+  String get codeDoesNotMatch => 'Non coincide';
+
+  @override
+  String get approvalMismatch =>
+      'I codici non coincidono: per sicurezza questo accesso è stato annullato.';
+
+  @override
+  String get approvalSignedOut =>
+      'Questo dispositivo non è più collegato al tuo account: ricomincia dall\'email.';
 
   @override
   String get startOver => 'Ricomincia';
@@ -729,6 +743,18 @@ class AppLocalizationsIt extends AppLocalizations {
   String get exportDone => 'Backup salvato';
 
   @override
+  String exportMissingFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Backup salvato, ma $count allegati non erano su questo dispositivo e sono rimasti fuori.',
+      one: 'Backup salvato, ma 1 allegato non era su questo dispositivo ed è rimasto fuori.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get exporting => 'Esportazione…';
 
   @override
@@ -784,4 +810,8 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get deviceRevoked =>
       'Questo dispositivo è stato scollegato dal tuo account.';
+
+  @override
+  String get deviceUnrecognized =>
+      'Il server non riconosce più questo dispositivo, ma i tuoi dati sono ancora qui. Esportali da Impostazioni › Backup › Esporta, poi esci da questo dispositivo e collegalo di nuovo.';
 }

@@ -11,13 +11,32 @@ import '../storage/local_db.dart';
 
 /// The server answered with an error.
 class ApiException implements Exception {
-  ApiException(this.status, this.code, this.message, [this.body = const {}]);
+  ApiException(this.status, this.code, this.message, [this.body = const {}, this.serverVersion]);
   final int status;
   final String code;
   final String message;
   final Map<String, dynamic> body;
 
+  /// The server's version (X-TheVault-Server header), if the answer came with it.
+  final String? serverVersion;
+
   int? get retryAfter => (body['retryAfter'] as num?)?.toInt();
+
+  /// This device was revoked: it must forget everything. Servers before 1.2.0 answer 401 both to a revoked and
+  /// to an unknown device, so from them any 401 means revoked (as apps up to 1.1.0 assumed).
+  bool get deviceRevoked => code == 'device_revoked' || (status == 401 && olderThan(serverVersion, 1, 2));
+
+  /// The server does not know this device's token but did not revoke it (e.g. its data was reset).
+  bool get deviceUnknown => status == 401 && code == 'unauthorized' && !deviceRevoked;
+
+  /// True if [version] is a release older than [major].[minor] ("1.1.0" < 1.2). Builds without a version
+  /// number ("dev", "ci") and a missing header count as new.
+  static bool olderThan(String? version, int major, int minor) {
+    final m = RegExp(r'^v?(\d+)\.(\d+)\.(\d+)').firstMatch(version?.trim() ?? '');
+    if (m == null) return false;
+    final a = int.parse(m[1]!), b = int.parse(m[2]!);
+    return a < major || (a == major && b < minor);
+  }
 
   @override
   String toString() => 'ApiException($status $code: $message)';
@@ -122,6 +141,9 @@ class ApiClient {
   final Duration timeout;
   final http.Client _http;
 
+  /// Called after every successful answer to a request with the token: the server knows this device.
+  void Function()? onAuthorized;
+
   void close() => _http.close();
 
   /// "mac-mini.tail123.ts.net" → https://mac-mini.tail123.ts.net. Plain http is only accepted for
@@ -161,28 +183,43 @@ class ApiClient {
     final http.Response resp;
     try {
       resp = await http.Response.fromStream(await _http.send(req).timeout(timeout)).timeout(timeout);
-    } on TimeoutException catch (e) {
-      throw NetworkException(e);
-    } on SocketException catch (e) {
-      throw NetworkException(e);
-    } on HandshakeException catch (e) {
-      throw NetworkException(e);
-    } on http.ClientException catch (e) {
-      throw NetworkException(e);
+    } catch (e) {
+      if (_connectionError(e)) throw NetworkException(e);
+      rethrow;
     }
-    Map<String, dynamic> json = const {};
-    if (resp.body.isNotEmpty) {
-      try {
-        json = Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
-      } catch (_) {
-        throw ApiException(resp.statusCode, 'bad_response', 'unexpected response from the server');
-      }
+    if (resp.statusCode >= 400) throw _errorFor(resp.statusCode, resp.body, resp.headers);
+    final Map<String, dynamic> json;
+    try {
+      json = resp.body.isEmpty ? const {} : Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+    } catch (_) {
+      throw ApiException(resp.statusCode, 'bad_response', 'unexpected response from the server');
     }
-    if (resp.statusCode >= 400) {
-      final e = json['error'] as Map<String, dynamic>? ?? const {};
-      throw ApiException(resp.statusCode, e['code'] as String? ?? 'error', e['message'] as String? ?? '', json);
-    }
+    if (token != null) onAuthorized?.call();
     return json;
+  }
+
+  /// Failures of the connection itself (no answer, TLS, timeout), as opposed to an answer.
+  /// Files are IOExceptions too, but a full disk is not a network problem.
+  static bool _connectionError(Object e) =>
+      e is TimeoutException || e is http.ClientException || (e is IOException && e is! FileSystemException);
+
+  /// The exception for an answer with an error status. A 5xx that is not an error of The Vault (empty, an
+  /// HTML page…) comes from something in front of the server, e.g. Tailscale Funnel answering 502 while the
+  /// server is stopped: the server is unreachable, not "something else".
+  static Exception _errorFor(int status, String body, Map<String, String> headers) {
+    final version = headers['x-thevault-server'];
+    Object? json;
+    try {
+      json = jsonDecode(body);
+    } catch (_) {}
+    final j = json is Map ? Map<String, dynamic>.from(json) : null;
+    final e = j?['error'];
+    if (e is Map && e['code'] is String) {
+      return ApiException(status, e['code'] as String, e['message'] as String? ?? '', j!, version);
+    }
+    if (status >= 500) return NetworkException(HttpException('HTTP $status: no answer from the server behind this address'));
+    if (j == null) return ApiException(status, 'bad_response', 'unexpected response from the server', const {}, version);
+    return ApiException(status, 'error', '', j, version);
   }
 
   // ------------------------------------------------------------------ login
@@ -342,23 +379,14 @@ class ApiClient {
     final req = http.Request('PUT', _u('/v1/blobs/$id/parts/$n'))
       ..headers.addAll({..._headers, 'Content-Type': 'application/octet-stream'})
       ..bodyBytes = bytes;
+    final http.Response resp;
     try {
-      final resp = await http.Response.fromStream(await _http.send(req).timeout(timeout * 4));
-      if (resp.statusCode != 204) {
-        Map<String, dynamic> j = const {};
-        try {
-          j = Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
-        } catch (_) {}
-        final e = j['error'] as Map<String, dynamic>? ?? const {};
-        throw ApiException(resp.statusCode, e['code'] as String? ?? 'error', e['message'] as String? ?? '', j);
-      }
-    } on TimeoutException catch (e) {
-      throw NetworkException(e);
-    } on SocketException catch (e) {
-      throw NetworkException(e);
-    } on http.ClientException catch (e) {
-      throw NetworkException(e);
+      resp = await http.Response.fromStream(await _http.send(req).timeout(timeout * 4));
+    } catch (e) {
+      if (_connectionError(e)) throw NetworkException(e);
+      rethrow;
     }
+    if (resp.statusCode != 204) throw _errorFor(resp.statusCode, resp.body, resp.headers);
   }
 
   Future<void> completeBlob(String id, int parts, String sha256Hex) =>
@@ -371,25 +399,16 @@ class ApiClient {
     try {
       final resp = await _http.send(req).timeout(timeout);
       if (resp.statusCode != 200 && resp.statusCode != 206) {
-        final body = await resp.stream.bytesToString();
-        Map<String, dynamic> j = const {};
-        try {
-          j = Map<String, dynamic>.from(jsonDecode(body) as Map);
-        } catch (_) {}
-        final e = j['error'] as Map<String, dynamic>? ?? const {};
-        throw ApiException(resp.statusCode, e['code'] as String? ?? 'error', e['message'] as String? ?? '', j);
+        throw _errorFor(resp.statusCode, await resp.stream.bytesToString(), resp.headers);
       }
       if (from > 0 && resp.statusCode == 200) {
         throw ApiException(200, 'range_ignored', 'the server ignored the range request');
       }
       await sink.addStream(resp.stream.timeout(const Duration(minutes: 2)));
       return resp.headers['etag']?.replaceAll('"', '');
-    } on TimeoutException catch (e) {
-      throw NetworkException(e);
-    } on SocketException catch (e) {
-      throw NetworkException(e);
-    } on http.ClientException catch (e) {
-      throw NetworkException(e);
+    } catch (e) {
+      if (_connectionError(e)) throw NetworkException(e);
+      rethrow;
     }
   }
 

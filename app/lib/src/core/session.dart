@@ -38,6 +38,10 @@ class Session {
   /// Called when the server revoked this device (the app must wipe and go back to the start).
   VoidCallback? onRevoked;
 
+  /// Called once when the server no longer knows this device but did not revoke it (401 unauthorized, e.g. its
+  /// data was reset): the local data stays, so the user can export it before linking the device again.
+  VoidCallback? onUnrecognized;
+
   StreamSubscription<Map<String, dynamic>>? _sub;
   Timer? _fallback;
 
@@ -66,7 +70,11 @@ class Session {
     final vault = VaultController(crypto: crypto, db: database, sync: sync, conflictSuffix: conflictSuffix);
     final realtime = Realtime(uri: api.wsUri, token: identity.token);
     final s = Session._(identity: identity, db: database, api: api, sync: sync, vault: vault, realtime: realtime);
-    sync.onUnauthorized = () async => s.onRevoked?.call();
+    sync.onRevoked = () async => s.onRevoked?.call();
+    sync.onUnrecognized = () async => s.onUnrecognized?.call();
+    api.onAuthorized = () {
+      if (sync.recognized()) unawaited(sync.sync());
+    };
     return s;
   }
 
@@ -86,7 +94,12 @@ class Session {
   void _onEvent(Map<String, dynamic> e) {
     switch (e['type']) {
       case 'hello':
+        // The server accepted this device's token: sync now, also during the pause after a 401.
+        sync.recognized();
+        unawaited(sync.sync());
       case 'records.changed':
+      // The real-time channel was refused (unknown or revoked device): a sync finds out which.
+      case 'refused':
         unawaited(sync.sync());
       case 'approval.requested':
         final a = e['approval'];
@@ -111,7 +124,12 @@ class Session {
     }
   }
 
-  Future<void> close() async {
+  Future<void>? _closing;
+
+  /// Safe to call more than once (e.g. a revocation seen by the real-time channel and by a sync).
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
     _fallback?.cancel();
     await _sub?.cancel();
     await realtime.dispose();

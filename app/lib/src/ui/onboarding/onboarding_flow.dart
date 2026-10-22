@@ -48,7 +48,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   ApprovalRequest? _approval;
   StreamSubscription<ApprovalProgress>? _approvalSub;
   String? _sas;
+  bool _codeConfirmed = false;
   String? _approvalEnded;
+  bool _approvalSignedOut = false;
+  Object? _approvalError;
 
   Timer? _resendTimer;
   int _resendIn = 0;
@@ -107,8 +110,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _go(_Step.email);
     } on FormatException {
       setState(() => _error = context.l.serverInvalid);
-    } on ApiException {
-      setState(() => _error = context.l.serverNotVault);
+    } on ApiException catch (e) {
+      // The Vault always answers with its own JSON: anything else (a web page, another service) is not it.
+      // Its own errors are shown as they are; a proxy in front of a stopped server is "unreachable" (NetworkException).
+      final notVault = e.code == 'not_thevault' || e.code == 'bad_response' || e.code == 'error';
+      setState(() => _error = notVault ? context.l.serverNotVault : _errorText(e));
     } catch (_) {
       setState(() => _error = context.l.serverUnreachable);
     } finally {
@@ -193,7 +199,10 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   void _startApproval() {
     _go(_Step.approval);
     _sas = null;
+    _codeConfirmed = false;
     _approvalEnded = null;
+    _approvalSignedOut = false;
+    _approvalError = null;
     final req = _approval = _account.requestApproval(_identity!);
     _approvalSub?.cancel();
     _approvalSub = req.progress.listen((p) {
@@ -206,10 +215,44 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         case ApprovalGranted(:final vaultKey):
           _vaultKey = vaultKey;
           _go(_Step.pin);
-        case ApprovalEnded(:final state):
-          setState(() => _approvalEnded = state);
+        case ApprovalEnded(:final state, :final signedOut, :final error):
+          setState(() {
+            _approvalEnded = state;
+            _approvalSignedOut = signedOut;
+            _approvalError = error;
+          });
       }
     });
+  }
+
+  /// The codes match: the vault key is saved once the other device has approved too.
+  Future<void> _confirmCode() async {
+    setState(() => _codeConfirmed = true);
+    await _approval?.confirmCode();
+  }
+
+  Future<void> _rejectCode() async {
+    setState(() => _busy = true);
+    await _approval?.rejectCode();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  /// This device's registration is gone: sign in again with the email.
+  void _relink() {
+    _identity = null;
+    _go(_Step.email);
+  }
+
+  Future<void> _noOtherDevice() async {
+    final r = await _approval?.cancel();
+    if (r != null && !r.cancelled) return; // the vault key is being saved: the PIN step follows
+    unawaited(_approvalSub?.cancel()); // the stream is closed already
+    if (!mounted) return;
+    if (r?.signedOut == true) {
+      _relink();
+    } else {
+      _go(_Step.recovery);
+    }
   }
 
   Future<void> _useRecovery() async {
@@ -421,14 +464,20 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 'expired' => l.approvalExpired,
                 'paused' => l.approvalPaused,
                 'invalid' => l.approvalInvalid,
+                'mismatch' => l.approvalMismatch,
                 'offline' => l.serverUnreachable,
+                _ when _approvalSignedOut => l.approvalSignedOut,
+                'error' when _approvalError != null => _errorText(_approvalError!),
                 _ => l.approvalExpired,
               },
               style: t.body.copyWith(color: c.danger),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            VButton(label: l.retry, large: true, expand: true, onPressed: _startApproval),
+            if (_approvalSignedOut)
+              VButton(label: l.startOver, large: true, expand: true, onPressed: _relink)
+            else
+              VButton(label: l.retry, large: true, expand: true, onPressed: _startApproval),
           ] else if (_sas == null) ...[
             Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 1.6, color: c.text2))),
             const SizedBox(height: 12),
@@ -438,21 +487,27 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             const SizedBox(height: 8),
             Text('${_sas!.substring(0, 3)} ${_sas!.substring(3)}',
                 style: t.monoLarge.copyWith(fontSize: 34, letterSpacing: 4), textAlign: TextAlign.center),
+            const SizedBox(height: 28),
+            if (_codeConfirmed) ...[
+              Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 1.6, color: c.text2))),
+              const SizedBox(height: 12),
+              Text(l.approvalWaiting, style: t.small, textAlign: TextAlign.center),
+            ] else ...[
+              VButton(label: l.codeMatches, large: true, expand: true, onPressed: _busy ? null : _confirmCode),
+              const SizedBox(height: 10),
+              VButton(label: l.codeDoesNotMatch, kind: VButtonKind.secondary, large: true, expand: true, busy: _busy, onPressed: _rejectCode),
+            ],
           ],
           const SizedBox(height: 36),
-          VButton(
-            label: l.noOtherDevice,
-            kind: VButtonKind.text,
-            onPressed: () async {
-              await _approvalSub?.cancel();
-              await _approval?.cancel();
-              _go(_Step.recovery);
-            },
-          ),
+          // Not once the code was confirmed here and the request is still running: the key may be on its way.
+          if (!_approvalSignedOut && !(_codeConfirmed && ended == null))
+            VButton(label: l.noOtherDevice, kind: VButtonKind.text, onPressed: _noOtherDevice),
         ]);
 
       case _Step.recovery:
-        return CenteredPage(top: _back(_Step.approval), width: 440, children: [
+        // Back asks for approval again (the previous request was cancelled).
+        final back = VButton(label: l.back, kind: VButtonKind.text, icon: Ic.chevronLeft, onPressed: _startApproval);
+        return CenteredPage(top: back, width: 440, children: [
           _header(l.recoveryTitle, l.recoverySubtitle),
           VTextField(
             controller: _recoveryCtrl,

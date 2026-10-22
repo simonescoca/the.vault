@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:sodium/sodium_sumo.dart';
 
@@ -19,7 +20,7 @@ import 'settings.dart';
 enum AppPhase { loading, onboarding, needsPin, locked, unlocked }
 
 /// One-off messages for the UI.
-enum AppNotice { deviceRevoked, pinWiped, clipboardCleared }
+enum AppNotice { deviceRevoked, deviceUnrecognized, pinWiped, clipboardCleared }
 
 class AppController extends ChangeNotifier {
   AppController({
@@ -30,7 +31,8 @@ class AppController extends ChangeNotifier {
     required this.dataDir,
     this.version = '1.0.0',
     this.online = true,
-  })  : account = AccountService(crypto: crypto, secrets: secrets),
+    http.Client? httpClient, // first access against a fake server (tests)
+  })  : account = AccountService(crypto: crypto, secrets: secrets, httpClient: httpClient),
         lock = LockService(secrets, platform);
 
   final VaultCrypto crypto;
@@ -64,6 +66,9 @@ class AppController extends ChangeNotifier {
   DateTime _lastTick = DateTime.now();
   Timer? _clipboardTimer;
   StreamSubscription<ApprovalInfo>? _approvalSub;
+
+  /// [AppNotice.deviceUnrecognized] waiting for the vault to be unlocked (only then can the user export).
+  bool _unrecognizedNotice = false;
 
   String get openDir => p.join(dataDir, 'open');
 
@@ -99,7 +104,10 @@ class AppController extends ChangeNotifier {
       locale: _lang,
       conflictSuffix: conflictSuffix,
     );
-    s.onRevoked = () => unawaited(_revoked());
+    s.onRevoked = () {
+      if (session == s) unawaited(_revoked()); // not again once this session is gone
+    };
+    s.onUnrecognized = _unrecognized;
     _approvalSub = s.approvalRequests.listen((a) {
       if (phase == AppPhase.unlocked) {
         _approvals.add(a);
@@ -181,6 +189,11 @@ class AppController extends ChangeNotifier {
       _lastTick = now;
     });
     pendingApprovalCount.value = 0;
+    if (_unrecognizedNotice) {
+      _unrecognizedNotice = false;
+      // Not if the server recognized this device again meanwhile.
+      if (session?.sync.unrecognized == true) _notices.add(AppNotice.deviceUnrecognized);
+    }
     unawaited(() async {
       for (final a in await session!.pendingApprovals()) {
         _approvals.add(a);
@@ -223,14 +236,31 @@ class AppController extends ChangeNotifier {
   // ------------------------------------------------------------------- reset
 
   Future<void> _revoked() async {
+    // Already being wiped (e.g. the real-time event and a sync both said so, or the user is signing out).
+    if (_wiping != null) return;
     await wipeDevice(tellServer: false);
     _notices.add(AppNotice.deviceRevoked);
   }
 
-  /// Signs out (or forgets a revoked device): deletes every local trace.
-  Future<void> wipeDevice({bool tellServer = true}) async {
+  /// The server no longer knows this device but did not revoke it (e.g. its data was reset): nothing is
+  /// deleted. The user is told once, while unlocked, to export the data, sign out and link the device again.
+  void _unrecognized() {
+    if (phase == AppPhase.unlocked) {
+      _notices.add(AppNotice.deviceUnrecognized);
+    } else {
+      _unrecognizedNotice = true;
+    }
+  }
+
+  Future<void>? _wiping;
+
+  /// Signs out (or forgets a revoked device): deletes every local trace. Calls while a wipe is running share it.
+  Future<void> wipeDevice({bool tellServer = true}) => _wiping ??= _wipe(tellServer).whenComplete(() => _wiping = null);
+
+  Future<void> _wipe(bool tellServer) async {
     _idle?.cancel();
     _sleepWatch?.cancel();
+    _unrecognizedNotice = false;
     await _approvalSub?.cancel();
     final id = identity;
     if (tellServer && id != null) {

@@ -67,14 +67,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get serverSubtitle =>
-      'Enter the address shown at the end of the server setup on your Mac mini.';
+      'Enter the address shown at the end of the server setup.';
 
   @override
-  String get serverHint => 'e.g. mac-mini.tail1234.ts.net';
+  String get serverHint => 'e.g. server.tail1234.ts.net';
 
   @override
   String get serverUnreachable =>
-      'Server not reachable. Check the address and that the Mac mini is on.';
+      'Server not reachable. Check the address and that the server is on.';
 
   @override
   String get serverNotVault => 'This is not a The Vault server.';
@@ -185,7 +185,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get approvalCodeHint =>
-      'Check that the other device shows the same code, then approve there.';
+      'Check that the other device shows the same code, approve there, then confirm here.';
 
   @override
   String get verificationCode => 'Verification code';
@@ -206,6 +206,20 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get approvalInvalid =>
       'Something doesn\'t add up: the approval was refused for safety.';
+
+  @override
+  String get codeMatches => 'The code matches';
+
+  @override
+  String get codeDoesNotMatch => 'It doesn\'t match';
+
+  @override
+  String get approvalMismatch =>
+      'The codes don\'t match: for your safety this access was cancelled.';
+
+  @override
+  String get approvalSignedOut =>
+      'This device is no longer linked to your account: start again from your email.';
 
   @override
   String get startOver => 'Start over';
@@ -726,6 +740,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get exportDone => 'Backup saved';
 
   @override
+  String exportMissingFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Backup saved, but $count attachments weren\'t on this device and were left out.',
+      one: 'Backup saved, but 1 attachment wasn\'t on this device and was left out.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get exporting => 'Exporting…';
 
   @override
@@ -780,4 +806,8 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deviceRevoked => 'This device was disconnected from your account.';
+
+  @override
+  String get deviceUnrecognized =>
+      'The server no longer recognizes this device, but your data is still here. Export it from Settings › Backup › Export, then sign out of this device and link it again.';
 }

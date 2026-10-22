@@ -120,13 +120,20 @@ class AccountService {
     return rec.code;
   }
 
+  /// Checks [vk] against the vault's key check. Only called while joining a vault that exists, so a server that
+  /// sends no key check is refused like a wrong key (otherwise any key would be accepted).
   Future<void> _checkKey(ApiClient client, SecureKey vk) async {
     final me = await client.me();
-    final kc = (me['vault'] as Map?)?['keyCheck'] as String?;
-    if (kc == null) return;
-    final expected = unb64(kc);
+    final kc = (me['vault'] as Map?)?['keyCheck'];
+    if (kc is! String) throw CryptoException('the server sent no key check for the vault');
+    final Uint8List expected;
+    try {
+      expected = unb64(kc);
+    } on FormatException {
+      throw CryptoException('invalid key check');
+    }
     final got = crypto.keyCheck(vk);
-    if (!crypto.sodium.memcmp(expected, got)) {
+    if (expected.length != got.length || !crypto.sodium.memcmp(expected, got)) {
       throw CryptoException('the received key does not match this vault');
     }
   }
@@ -152,7 +159,8 @@ sealed class ApprovalProgress {}
 /// Waiting for another device to answer.
 class ApprovalWaiting extends ApprovalProgress {}
 
-/// The other device answered: show this verification code.
+/// The other device answered: show this verification code and ask whether the other device shows the same
+/// ([ApprovalRequest.confirmCode] or [ApprovalRequest.rejectCode]).
 class ApprovalCode extends ApprovalProgress {
   ApprovalCode(this.code);
   final String code;
@@ -164,13 +172,22 @@ class ApprovalGranted extends ApprovalProgress {
 }
 
 class ApprovalEnded extends ApprovalProgress {
-  ApprovalEnded(this.state);
+  ApprovalEnded(this.state, {this.signedOut = false, this.error});
 
-  /// rejected | expired | cancelled | invalid
+  /// rejected | expired | cancelled | invalid | mismatch (the user saw different codes) | paused | error | offline
   final String state;
+
+  /// This device's registration is gone (signed out, revoked or unknown to the server): start again from the email.
+  final bool signedOut;
+
+  /// What went wrong, for 'error'.
+  final Object? error;
 }
 
 /// The new device's side of the approval (polls the server; the steps are quick).
+///
+/// The vault key is saved only when both the server says the other device approved and the user confirmed
+/// here that the two codes match ([confirmCode]), in either order.
 class ApprovalRequest {
   ApprovalRequest._(this._svc, this._id) {
     _start();
@@ -182,8 +199,26 @@ class ApprovalRequest {
   late final ApiClient _api = _svc.api(_id.server, token: _id.token);
   late final Uint8List _nonce = _svc.crypto.randomBytes(32);
   String? _approvalId;
+
+  /// The other device's key and nonce, pinned before revealing our nonce: the code shown here is computed from
+  /// them, and the vault key must come from that same key.
+  Uint8List? _approverKey;
+  Uint8List? _approverNonce;
   bool _revealed = false;
+  bool _confirmed = false;
+
+  /// The server said 'approved' (this device is active there now).
+  bool _approved = false;
+
+  /// Opened and checked, waiting for the user's confirmation.
+  SecureKey? _key;
   bool _done = false;
+
+  /// The vault key is being saved (ApprovalGranted follows).
+  bool _granted = false;
+
+  /// How it ended, when it did.
+  bool _signedOut = false;
   Timer? _timer;
 
   Stream<ApprovalProgress> get progress => _progress.stream;
@@ -198,7 +233,15 @@ class ApprovalRequest {
       _approvalId = await _api.createApproval(commitment);
       _timer = Timer.periodic(pollEvery, (_) => _poll());
     } on ApiException catch (e) {
-      _finish(e.status == 429 ? 'paused' : 'error');
+      if (e.status == 401 || e.code == 'device_revoked') {
+        _finish('cancelled', signedOut: true); // unknown or revoked: start again from the email
+      } else if (e.status == 403) {
+        // No longer pending (e.g. approved, then the code was refused here while offline): unlink it.
+        await _svc.forgetDevice(id: _id);
+        _finish('cancelled', signedOut: true);
+      } else {
+        _finish(e.status == 429 ? 'paused' : 'error', error: e);
+      }
     } on NetworkException {
       _finish('offline');
     }
@@ -207,80 +250,204 @@ class ApprovalRequest {
   bool _polling = false;
 
   Future<void> _poll() async {
-    if (_done || _polling || _approvalId == null) return;
+    if (_done || _polling || _approvalId == null || _key != null) return;
     _polling = true;
     try {
       final a = await _api.approval(_approvalId!);
+      if (_done) return;
       switch (a.state) {
         case 'responded' when !_revealed:
-          await _api.revealApproval(a.id, _nonce);
-          _revealed = true;
-          _progress.add(ApprovalCode(_code(a)));
+          if (!_pin(a)) return await _refuse('invalid');
+          await _api.revealApproval(_approvalId!, _nonce);
+          _showCode();
         case 'revealed' when !_revealed:
-          _revealed = true;
-          _progress.add(ApprovalCode(_code(a)));
+          // Our reveal reached the server but its answer got lost: valid only with the key and nonce pinned
+          // before revealing (afterwards the server knows our nonce and could pick others that give the same code).
+          if (_approverKey == null || !_pin(a)) return await _refuse('invalid');
+          _showCode();
         case 'approved':
-          final sk = SecureKey.fromList(_svc.crypto.sodium, _id.deviceSecretKey);
-          try {
-            final vk = _svc.crypto.openVaultKey(
-              box: a.box!,
-              nonce: a.boxNonce!,
-              approverPublicKey: a.responderPublicKey!,
-              deviceSecretKey: sk,
-              userId: _id.userId,
-              approvalId: a.id,
-            );
-            await _svc._checkKey(_api, vk);
-            await _svc.secrets.writeVaultKey(vk.extractBytes());
-            _id.status = 'active';
-            await _svc.secrets.writeIdentity(_id);
-            _done = true;
-            _timer?.cancel();
-            _progress.add(ApprovalGranted(vk));
-          } on CryptoException {
-            _finish('invalid');
-          } finally {
-            sk.dispose();
-          }
+          _approved = true;
+          await _onApproved(a);
         case 'rejected' || 'expired' || 'cancelled':
           _finish(a.state);
       }
     } on NetworkException {
       // try again at the next tick
     } on ApiException catch (e) {
-      if (e.status == 401 || e.status == 404) _finish('cancelled');
+      // The request or this device is gone (no vault data here yet, nothing to keep).
+      if (e.status == 401 || e.code == 'device_revoked') {
+        _finish('cancelled', signedOut: true);
+      } else if (e.status == 404) {
+        _finish('cancelled');
+      }
     } finally {
       _polling = false;
     }
   }
 
-  String _code(ApprovalInfo a) => _svc.crypto.approvalCode(
-        approvalId: a.id,
-        newDevicePublicKey: _id.devicePublicKey,
-        approverPublicKey: a.responderPublicKey!,
-        approverNonce: a.responderNonce!,
-        newDeviceNonce: _nonce,
-      );
-
-  void _finish(String state) {
-    if (_done) return;
-    _done = true;
-    _timer?.cancel();
-    _progress.add(ApprovalEnded(state));
+  /// Pins the other device's key and nonce, or checks that they did not change. False if they are missing,
+  /// malformed or different from the pinned ones.
+  bool _pin(ApprovalInfo a) {
+    final pk = a.responderPublicKey, n = a.responderNonce;
+    if (pk == null || n == null || pk.length != 32 || n.length != 32) return false;
+    if (_approverKey == null) {
+      _approverKey = pk;
+      _approverNonce = n;
+      return true;
+    }
+    return _same(_approverKey!, pk) && _same(_approverNonce!, n);
   }
 
-  /// The user gave up (or chose the emergency code instead).
-  Future<void> cancel() async {
+  /// Constant-time comparison.
+  bool _same(Uint8List a, Uint8List b) => a.length == b.length && _svc.crypto.sodium.memcmp(a, b);
+
+  void _showCode() {
+    _revealed = true;
+    _emit(ApprovalCode(_svc.crypto.approvalCode(
+      approvalId: _approvalId!,
+      newDevicePublicKey: _id.devicePublicKey,
+      approverPublicKey: _approverKey!,
+      approverNonce: _approverNonce!,
+      newDeviceNonce: _nonce,
+    )));
+  }
+
+  /// The other device approved: opens the vault key with the pinned key and checks it, then waits for the
+  /// user's confirmation (if not given yet).
+  Future<void> _onApproved(ApprovalInfo a) async {
+    final pk1 = _approverKey;
+    final got = a.responderPublicKey;
+    final box = a.box, boxNonce = a.boxNonce;
+    // Approved without the code shown here, or with another key than the one the code covers: tampering.
+    if (!_revealed || pk1 == null || got == null || !_same(pk1, got) || box == null || boxNonce == null) {
+      return _refuse('invalid');
+    }
+    final sk = SecureKey.fromList(_svc.crypto.sodium, _id.deviceSecretKey);
+    final SecureKey vk;
+    try {
+      vk = _svc.crypto.openVaultKey(
+        box: box,
+        nonce: boxNonce,
+        approverPublicKey: pk1,
+        deviceSecretKey: sk,
+        userId: _id.userId,
+        approvalId: _approvalId!,
+      );
+    } on CryptoException {
+      return _refuse('invalid');
+    } finally {
+      sk.dispose();
+    }
+    try {
+      await _svc._checkKey(_api, vk);
+    } on CryptoException {
+      vk.dispose();
+      return _refuse('invalid');
+    } catch (_) {
+      vk.dispose();
+      rethrow; // network or server error: try again at the next tick
+    }
+    if (_done) {
+      vk.dispose();
+      return;
+    }
+    _timer?.cancel(); // nothing more to ask the server
+    _key = vk;
+    if (_confirmed) await _grant();
+  }
+
+  /// The user saw the same code on both devices.
+  Future<void> confirmCode() async {
+    if (_done || !_revealed) return;
+    _confirmed = true;
+    if (_key != null) await _grant();
+  }
+
+  /// The user saw different codes: someone may be in the middle. Cancels the request on the server; if the
+  /// server already approved this device, signs it out instead (it must not stay linked without the key).
+  Future<void> rejectCode() async {
     if (_done) return;
     _done = true;
     _timer?.cancel();
+    _key?.dispose();
+    _key = null;
+    final signedOut = await _withdraw();
+    _end(ApprovalEnded('mismatch', signedOut: signedOut));
+  }
+
+  /// Cancels the request on the server. If the server already approved this device (it is no longer pending),
+  /// signs it out instead: it must not stay linked without the key. Returns whether it was signed out.
+  Future<bool> _withdraw() async {
+    var signOut = _approved;
     final id = _approvalId;
-    if (id != null) {
+    if (!signOut && id != null) {
       try {
         await _api.cancelApproval(id);
-      } catch (_) {}
+      } on ApiException catch (e) {
+        // 403: approved meanwhile (no longer pending); 401 or device_revoked: the registration is gone.
+        signOut = e.status == 401 || e.status == 403 || e.code == 'device_revoked';
+      } on NetworkException {
+        // the request expires by itself
+      }
+    }
+    if (signOut) await _svc.forgetDevice(id: _id);
+    return signOut;
+  }
+
+  Future<void> _grant() async {
+    final vk = _key!;
+    _key = null;
+    _done = true;
+    _granted = true;
+    _timer?.cancel();
+    await _svc.secrets.writeVaultKey(vk.extractBytes());
+    _id.status = 'active';
+    await _svc.secrets.writeIdentity(_id);
+    _emit(ApprovalGranted(vk));
+  }
+
+  /// Ends without the vault key. If the server already approved this device, it is signed out.
+  Future<void> _refuse(String state) async {
+    if (_done) return;
+    _done = true;
+    _timer?.cancel();
+    _key?.dispose();
+    _key = null;
+    if (_approved) await _svc.forgetDevice(id: _id);
+    _end(ApprovalEnded(state, signedOut: _approved));
+  }
+
+  void _finish(String state, {bool signedOut = false, Object? error}) {
+    if (_done) return;
+    _done = true;
+    _timer?.cancel();
+    _end(ApprovalEnded(state, signedOut: signedOut, error: error));
+  }
+
+  void _end(ApprovalEnded e) {
+    _signedOut = e.signedOut;
+    _emit(e);
+  }
+
+  void _emit(ApprovalProgress p) {
+    if (!_progress.isClosed) _progress.add(p);
+  }
+
+  /// The user gave up (or chose the emergency code instead). [cancelled] is false when the vault key is
+  /// already being saved: ApprovalGranted follows. [signedOut]: this device's registration is gone (e.g. the
+  /// server had already approved it, so it was signed out): start again from the email.
+  Future<({bool cancelled, bool signedOut})> cancel() async {
+    if (_granted) return (cancelled: false, signedOut: false);
+    var signedOut = _signedOut;
+    if (!_done) {
+      _done = true;
+      _timer?.cancel();
+      _key?.dispose();
+      _key = null;
+      signedOut = await _withdraw();
     }
     await _progress.close();
+    return (cancelled: true, signedOut: signedOut);
   }
 }
 

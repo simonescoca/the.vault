@@ -35,7 +35,8 @@ class SyncEngine {
     required this.blobs,
     required this.onConflict,
     this.onChanged,
-    this.onUnauthorized,
+    this.onRevoked,
+    this.onUnrecognized,
   });
 
   final LocalDb db;
@@ -46,8 +47,32 @@ class SyncEngine {
   /// Record ids that changed locally because of a sync.
   void Function(Set<String> ids)? onChanged;
 
-  /// The server does not recognize this device any more (revoked or signed out elsewhere).
-  Future<void> Function()? onUnauthorized;
+  /// The server says this device was revoked (code device_revoked, or any 401 from a server before 1.2.0):
+  /// the app forgets everything. Called once; afterwards this engine does nothing.
+  Future<void> Function()? onRevoked;
+
+  /// The server does not know this device's token (401 unauthorized), e.g. its data was reset or restored from
+  /// an older backup. The local data stays. Called once, until the server accepts the token again.
+  Future<void> Function()? onUnrecognized;
+
+  /// After a 401 unauthorized, syncs ask the server again only after this time (no point in insisting with
+  /// every change), unless the server shows it knows the device again ([recognized]).
+  static Duration unrecognizedRetry = const Duration(minutes: 10);
+  DateTime? _unrecognizedAt;
+  Timer? _retry;
+  bool _revoked = false;
+
+  /// True from a 401 unauthorized until the server accepts this device's token again.
+  bool get unrecognized => _unrecognizedAt != null;
+
+  /// The server accepted this device's token (the real-time channel connected, or a request succeeded):
+  /// the pause after a 401 ends. Returns true if it was paused (the caller then syncs).
+  bool recognized() {
+    if (_unrecognizedAt == null) return false;
+    _unrecognizedAt = null;
+    _retry?.cancel();
+    return true;
+  }
 
   final state = ValueNotifier<SyncState>(SyncState.idle);
 
@@ -63,8 +88,11 @@ class SyncEngine {
   bool _disposed = false;
 
   /// Requests a sync. Calls while a sync is running are merged into one more round.
-  Future<void> sync() {
-    if (_disposed || !enabled) return Future.value();
+  /// [force] asks the server also during the pause after a 401.
+  Future<void> sync({bool force = false}) {
+    if (_disposed || _revoked || !enabled) return Future.value();
+    final refused = _unrecognizedAt;
+    if (!force && refused != null && DateTime.now().difference(refused) < unrecognizedRetry) return Future.value();
     final current = _inflight;
     if (current != null) {
       _again = true;
@@ -76,7 +104,7 @@ class SyncEngine {
         do {
           _again = false;
           await _runOnce();
-        } while (_again && !_disposed);
+        } while (_again && !_disposed && !_revoked && !unrecognized);
       } finally {
         _inflight = null;
         c.complete();
@@ -95,6 +123,7 @@ class SyncEngine {
       if (changed.isNotEmpty) onChanged?.call(changed);
       state.value = SyncState.idle;
       lastError = null;
+      recognized();
       _transferFuture = _transferBlobs();
     } on NetworkException catch (e) {
       if (changed.isNotEmpty) onChanged?.call(changed);
@@ -103,12 +132,23 @@ class SyncEngine {
     } on ApiException catch (e) {
       if (changed.isNotEmpty) onChanged?.call(changed);
       lastError = e;
-      if (e.status == 401) {
-        state.value = SyncState.error;
-        await onUnauthorized?.call();
+      state.value = SyncState.error;
+      // Only a revocation wipes this device. Any other refusal keeps every local change.
+      if (e.deviceRevoked) {
+        _revoked = true;
+        await onRevoked?.call();
         return;
       }
-      state.value = SyncState.error;
+      if (e.deviceUnknown) {
+        final first = _unrecognizedAt == null;
+        _unrecognizedAt = DateTime.now();
+        // Asks again later by itself, also if nothing else triggers a sync meanwhile.
+        _retry?.cancel();
+        _retry = Timer(unrecognizedRetry, () => unawaited(sync(force: true)));
+        if (first) await onUnrecognized?.call();
+        return;
+      }
+      // Anything else, a 401 without an error of The Vault (a proxy in front of it) included: a plain error.
       debugPrint('sync error: $e');
     }
   }
@@ -338,6 +378,7 @@ class SyncEngine {
 
   Future<void> dispose() async {
     _disposed = true;
+    _retry?.cancel();
     await _inflight?.future;
     await _transferFuture?.timeout(const Duration(seconds: 5), onTimeout: () {});
     state.dispose();

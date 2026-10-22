@@ -6,6 +6,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sodium/sodium_sumo.dart';
+import 'package:the_vault/src/app/app_controller.dart';
+import 'package:the_vault/src/app/settings.dart';
 import 'package:the_vault/src/core/account/account_service.dart';
 import 'package:the_vault/src/core/account/identity.dart';
 import 'package:the_vault/src/core/api/api_client.dart';
@@ -15,8 +17,10 @@ import 'package:the_vault/src/core/model/item.dart';
 import 'package:the_vault/src/core/model/item_draft.dart';
 import 'package:the_vault/src/core/session.dart';
 import 'package:the_vault/src/core/storage/secret_store.dart';
+import 'package:the_vault/src/core/sync/sync_engine.dart';
 import 'package:the_vault/src/core/vault/vault_controller.dart';
 
+import '../ui/harness.dart' show FakePlatform;
 import 'server_harness.dart';
 
 const email = 'me@example.com';
@@ -51,6 +55,20 @@ class Device {
 
   VaultController get vault => session!.vault;
 
+  /// The real app on this device's data (identity and vault key already in its keychain), PIN 123456.
+  Future<AppController> app() async {
+    final a = AppController(
+      crypto: crypto,
+      secrets: secrets,
+      platform: FakePlatform(),
+      settings: AppSettings(File('${dir.path}/settings.json')),
+      dataDir: dir.path,
+    );
+    await a.lock.setPin('123456');
+    await a.init();
+    return a;
+  }
+
   Future<void> close() async {
     await session?.close();
     if (dir.existsSync()) dir.deleteSync(recursive: true);
@@ -79,6 +97,7 @@ void main() {
   late TestServer server;
   late VaultCrypto crypto;
   final devices = <Device>[];
+  final apps = <AppController>[];
 
   setUpAll(() async {
     crypto = await VaultCrypto.init();
@@ -88,6 +107,13 @@ void main() {
   });
 
   tearDownAll(() async {
+    SyncEngine.unrecognizedRetry = const Duration(minutes: 10);
+    for (final a in apps) {
+      final s = a.session;
+      a.session = null;
+      await s?.close();
+      a.dispose();
+    }
     for (final d in devices) {
       await d.close();
     }
@@ -131,6 +157,11 @@ void main() {
     final codeOnPc = progress.whereType<ApprovalCode>().single.code;
     expect(codeOnPc, codeOnMac, reason: 'both screens show the same 6 digits');
     await response.approve(vaultKey: mac.vault.vaultKey, userId: macId.userId);
+    // Approved on the Mac, but the PC keeps the key only once the user confirmed the code there too.
+    await Future<void>.delayed(ApprovalRequest.pollEvery * 5);
+    expect(progress.any((p) => p is ApprovalGranted), isFalse);
+    expect(await pc.secrets.readVaultKey(), isNull);
+    await request.confirmCode();
     await eventually(() => progress.any((p) => p is ApprovalGranted), what: 'approval granted');
     await sub.cancel();
     expect(pcId.status, 'active');
@@ -220,12 +251,109 @@ void main() {
 
     // ---------------------------------------------------------------- revocation
     var revoked = false;
+    var unrecognized = false;
     laptop.session!.onRevoked = () => revoked = true;
+    laptop.session!.onUnrecognized = () => unrecognized = true;
     final devs = await mac.session!.api.devices();
     expect(devs.map((d) => d.name), containsAll(['MacBook di Simone', 'PC di casa', 'Laptop nuovo']));
     await mac.session!.api.revokeDevice(lapId.deviceId);
     await eventually(() => revoked, what: 'laptop told it was revoked');
-    await expectLater(laptop.session!.api.me(), throwsA(isA<ApiException>().having((e) => e.status, 'status', 401)));
+    // 401, so that apps up to 1.1.0 (which wipe on any 401) keep wiping; the code tells it from an unknown token.
+    final isRevoked = isA<ApiException>().having((e) => e.status, 'status', 401).having((e) => e.code, 'code', 'device_revoked');
+    await expectLater(laptop.session!.api.me(), throwsA(isRevoked));
+    // Without the real-time event (e.g. offline at that moment) the next sync finds out.
+    await laptop.session!.realtime.stop();
+    revoked = false;
+    await laptop.session!.sync.sync();
+    expect(revoked, isTrue);
+    expect(unrecognized, isFalse);
+
+    // ---------------------------------------------------------------- the real app: revoked → everything deleted
+    final tablet = Device('Tablet', 'linux', crypto);
+    devices.add(tablet);
+    final tabId = await tablet.login(server);
+    await tablet.account.useRecoveryCode(tabId, RecoveryCode.tryParse(recovery.formatted)!);
+    final tabApp = await tablet.app();
+    apps.add(tabApp);
+    final tabNotices = <AppNotice>[];
+    tabApp.notices.listen(tabNotices.add);
+    expect(tabApp.phase, AppPhase.locked);
+    await tabApp.unlockWithPin('123456');
+    await eventually(() => tabApp.session!.vault.list(Section.all).isNotEmpty, what: 'data on the tablet');
+    final tabSession = tabApp.session!;
+    await tabSession.realtime.stop(); // no real-time event: the 401 device_revoked alone is enough
+    await mac.session!.api.revokeDevice(tabId.deviceId);
+    await Future.wait([tabSession.sync.sync(), tabSession.sync.sync()]);
+    tabSession.onRevoked?.call(); // the real-time event racing the sync: still one wipe
+    await eventually(() => tabApp.phase == AppPhase.onboarding, what: 'tablet wiped');
+    await eventually(() => tabNotices.contains(AppNotice.deviceRevoked), what: 'revoked notice');
+    tabSession.onRevoked?.call(); // too late: ignored
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    expect(tabNotices, [AppNotice.deviceRevoked]);
+    expect(await tablet.secrets.readVaultKey(), isNull);
+    expect(await tablet.secrets.readIdentity(), isNull);
+    expect(File('${tablet.dir.path}/vault.db').existsSync(), isFalse);
+
+    // ---------------------------------------------------------------- the real app: unknown token → nothing deleted
+    final desk = Device('Desktop', 'linux', crypto);
+    devices.add(desk);
+    final deskId = await desk.login(server);
+    final deskKey = await desk.account.useRecoveryCode(deskId, RecoveryCode.tryParse(recovery.formatted)!);
+    final ds = desk.open(deskKey, realtime: false);
+    await ds.sync.sync();
+    expect(ds.vault.list(Section.all), isNotEmpty);
+    await ds.close();
+    desk.session = null;
+    // The server no longer knows the token (e.g. its data was reset): simulated with a token it never issued.
+    final unknownToken = b64(crypto.randomBytes(32));
+    await desk.secrets.writeIdentity(Identity.fromJson({...deskId.toJson(), 'token': unknownToken}));
+    final deskApp = await desk.app();
+    apps.add(deskApp);
+    final deskNotices = <AppNotice>[];
+    deskApp.notices.listen(deskNotices.add);
+    final dsess = deskApp.session!;
+    await eventually(() => dsess.sync.unrecognized, what: '401 on the desktop');
+    expect(deskApp.phase, AppPhase.locked, reason: 'not wiped');
+    expect(deskNotices, isEmpty, reason: 'told once unlocked, when the data can be exported');
+
+    // The server knows the device by the token again (e.g. the right backup was restored): the real-time channel
+    // reconnects (it would by itself, within its slow retry after a refusal).
+    Future<void> serverKnows(String token) async {
+      dsess.api.token = token;
+      dsess.realtime.token = token;
+      await dsess.realtime.stop();
+      dsess.realtime.start();
+    }
+
+    // Recognized again before the user unlocks: syncing resumes and the warning is no longer due.
+    await serverKnows(deskId.token);
+    await eventually(() => !dsess.sync.unrecognized, what: 'recognized again');
+    await deskApp.unlockWithPin('123456');
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(deskNotices, isEmpty, reason: 'recognized again meanwhile: no warning');
+
+    // While unlocked the server forgets it again: warned once, nothing deleted, new edits kept.
+    dsess.api.token = unknownToken;
+    await dsess.sync.sync();
+    await eventually(() => deskNotices.isNotEmpty, what: 'unrecognized notice');
+    expect(dsess.vault.list(Section.all), isNotEmpty, reason: 'the data is still here');
+    final later = newItem('Scritta dopo', {'nota': 'non si perde'});
+    dsess.vault.save(later);
+    await dsess.sync.sync(force: true);
+    await dsess.sync.sync(force: true);
+    expect(deskNotices, [AppNotice.deviceUnrecognized], reason: 'not repeated at every retry');
+    expect(deskApp.phase, AppPhase.unlocked);
+    expect(dsess.db.pendingCount, 1, reason: 'the new entry waits, it is not lost');
+    expect(await desk.secrets.readVaultKey(), isNotNull);
+    expect(File('${desk.dir.path}/vault.db').existsSync(), isTrue);
+
+    // Known again, well within the 10-minute pause after the 401: the real-time channel connects and the edit goes out.
+    expect(SyncEngine.unrecognizedRetry, const Duration(minutes: 10));
+    await serverKnows(deskId.token);
+    await eventually(() => dsess.db.pendingCount == 0, what: 'edit pushed once recognized');
+    await eventually(() => mac.vault.byId(later.id) != null, what: 'the edit on the Mac');
+    expect(dsess.sync.unrecognized, isFalse);
+    expect(deskNotices, [AppNotice.deviceUnrecognized]);
 
     // ---------------------------------------------------------------- a stolen email is not enough
     final intruder = Device('Intruso', 'linux', crypto);

@@ -209,19 +209,19 @@ abstract class AppLocalizations {
   /// No description provided for @serverSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Enter the address shown at the end of the server setup on your Mac mini.'**
+  /// **'Enter the address shown at the end of the server setup.'**
   String get serverSubtitle;
 
   /// No description provided for @serverHint.
   ///
   /// In en, this message translates to:
-  /// **'e.g. mac-mini.tail1234.ts.net'**
+  /// **'e.g. server.tail1234.ts.net'**
   String get serverHint;
 
   /// No description provided for @serverUnreachable.
   ///
   /// In en, this message translates to:
-  /// **'Server not reachable. Check the address and that the Mac mini is on.'**
+  /// **'Server not reachable. Check the address and that the server is on.'**
   String get serverUnreachable;
 
   /// No description provided for @serverNotVault.
@@ -413,7 +413,7 @@ abstract class AppLocalizations {
   /// No description provided for @approvalCodeHint.
   ///
   /// In en, this message translates to:
-  /// **'Check that the other device shows the same code, then approve there.'**
+  /// **'Check that the other device shows the same code, approve there, then confirm here.'**
   String get approvalCodeHint;
 
   /// No description provided for @verificationCode.
@@ -451,6 +451,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Something doesn\'t add up: the approval was refused for safety.'**
   String get approvalInvalid;
+
+  /// No description provided for @codeMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'The code matches'**
+  String get codeMatches;
+
+  /// No description provided for @codeDoesNotMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'It doesn\'t match'**
+  String get codeDoesNotMatch;
+
+  /// No description provided for @approvalMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'The codes don\'t match: for your safety this access was cancelled.'**
+  String get approvalMismatch;
+
+  /// No description provided for @approvalSignedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'This device is no longer linked to your account: start again from your email.'**
+  String get approvalSignedOut;
 
   /// No description provided for @startOver.
   ///
@@ -1358,6 +1382,12 @@ abstract class AppLocalizations {
   /// **'Backup saved'**
   String get exportDone;
 
+  /// No description provided for @exportMissingFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Backup saved, but 1 attachment wasn\'t on this device and was left out.} other{Backup saved, but {count} attachments weren\'t on this device and were left out.}}'**
+  String exportMissingFiles(int count);
+
   /// No description provided for @exporting.
   ///
   /// In en, this message translates to:
@@ -1447,6 +1477,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This device was disconnected from your account.'**
   String get deviceRevoked;
+
+  /// No description provided for @deviceUnrecognized.
+  ///
+  /// In en, this message translates to:
+  /// **'The server no longer recognizes this device, but your data is still here. Export it from Settings › Backup › Export, then sign out of this device and link it again.'**
+  String get deviceUnrecognized;
 }
 
 class _AppLocalizationsDelegate

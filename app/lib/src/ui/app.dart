@@ -76,9 +76,14 @@ class _TheVaultAppState extends State<TheVaultApp> {
       final l = AppLocalizations.of(ctx);
       _toasts.show(switch (n) {
         AppNotice.deviceRevoked => l.deviceRevoked,
+        AppNotice.deviceUnrecognized => l.deviceUnrecognized,
         AppNotice.pinWiped => l.pinWiped,
         AppNotice.clipboardCleared => l.clipboardCleared,
-      }, duration: n == AppNotice.clipboardCleared ? const Duration(milliseconds: 1600) : const Duration(seconds: 6));
+      }, duration: switch (n) {
+        AppNotice.clipboardCleared => const Duration(milliseconds: 1600),
+        AppNotice.deviceUnrecognized => const Duration(seconds: 20), // long, and the user has to act on it
+        _ => const Duration(seconds: 6),
+      });
     });
   }
 

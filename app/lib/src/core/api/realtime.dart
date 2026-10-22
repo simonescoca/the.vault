@@ -24,6 +24,10 @@ class Realtime {
   bool _running = false;
   int _attempt = 0;
 
+  /// The server refused the token (401/403): reconnect only after [refusedRetry], also on [reconnectNow].
+  bool _refused = false;
+  static Duration refusedRetry = const Duration(minutes: 10);
+
   Stream<Map<String, dynamic>> get events => _events.stream;
 
   void start() {
@@ -43,7 +47,7 @@ class Realtime {
 
   /// Reconnect right away (e.g. after the network came back).
   void reconnectNow() {
-    if (!_running) return;
+    if (!_running || _refused) return;
     _retry?.cancel();
     if (_ws == null) _connect();
   }
@@ -61,6 +65,7 @@ class Realtime {
       ws.pingInterval = const Duration(seconds: 20);
       _ws = ws;
       _attempt = 0;
+      _refused = false;
       connected.value = true;
       ws.listen(
         (msg) {
@@ -73,8 +78,15 @@ class Realtime {
         onError: (_) => _onClosed(),
         cancelOnError: true,
       );
-    } catch (_) {
-      _scheduleRetry();
+    } catch (e) {
+      final status = e is WebSocketException ? e.httpStatusCode : null;
+      if (status != 401 && status != 403) return _scheduleRetry();
+      // Unknown or revoked device: the handshake does not say which, the REST API does (see Session).
+      _refused = true;
+      if (!_events.isClosed) _events.add({'type': 'refused', 'status': status});
+      if (!_running) return;
+      _retry?.cancel();
+      _retry = Timer(refusedRetry, _connect);
     }
   }
 

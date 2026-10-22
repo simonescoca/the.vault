@@ -110,7 +110,7 @@ class _SyncStatus extends StatelessWidget {
         final (icon, label, tip) = switch (engine.state.value) {
           SyncState.syncing => (Ic.refreshCw, l.syncing, null),
           SyncState.offline => (Ic.cloudOff, l.syncOffline, l.syncOfflineHint),
-          SyncState.error => (Ic.triangleAlert, l.syncError, engine.lastError?.toString()),
+          SyncState.error => (Ic.triangleAlert, l.syncError, engine.unrecognized ? l.deviceUnrecognized : engine.lastError?.toString()),
           SyncState.idle => pending > 0 ? (Ic.cloud, l.pendingChanges(pending), null) : (Ic.circleCheck, l.syncOk, null),
         };
         final row = Padding(

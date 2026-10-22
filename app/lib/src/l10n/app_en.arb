@@ -25,9 +25,9 @@
   },
   "offlineError": "The server can't be reached right now.",
   "serverTitle": "Your server",
-  "serverSubtitle": "Enter the address shown at the end of the server setup on your Mac mini.",
-  "serverHint": "e.g. mac-mini.tail1234.ts.net",
-  "serverUnreachable": "Server not reachable. Check the address and that the Mac mini is on.",
+  "serverSubtitle": "Enter the address shown at the end of the server setup.",
+  "serverHint": "e.g. server.tail1234.ts.net",
+  "serverUnreachable": "Server not reachable. Check the address and that the server is on.",
   "serverNotVault": "This is not a The Vault server.",
   "serverInvalid": "This address is not valid.",
   "emailTitle": "Your email",
@@ -87,13 +87,17 @@
   "approvalTitle": "Confirm this device",
   "approvalSubtitle": "Open The Vault on a device you already use: it will ask you to approve this access.",
   "approvalWaiting": "Waiting for approval…",
-  "approvalCodeHint": "Check that the other device shows the same code, then approve there.",
+  "approvalCodeHint": "Check that the other device shows the same code, approve there, then confirm here.",
   "verificationCode": "Verification code",
   "noOtherDevice": "I don't have other devices",
   "approvalRejected": "Access was rejected.",
   "approvalExpired": "The request has expired.",
   "approvalPaused": "Too many rejected requests. Try again in an hour.",
   "approvalInvalid": "Something doesn't add up: the approval was refused for safety.",
+  "codeMatches": "The code matches",
+  "codeDoesNotMatch": "It doesn't match",
+  "approvalMismatch": "The codes don't match: for your safety this access was cancelled.",
+  "approvalSignedOut": "This device is no longer linked to your account: start again from your email.",
   "startOver": "Start over",
   "recoveryTitle": "Emergency code",
   "recoverySubtitle": "Enter the emergency code you saved when you created your vault.",
@@ -367,6 +371,14 @@
   "passwordTooShort": "Too short: use at least 10 characters.",
   "passwordsDontMatch": "The passwords don't match.",
   "exportDone": "Backup saved",
+  "exportMissingFiles": "{count, plural, =1{Backup saved, but 1 attachment wasn't on this device and was left out.} other{Backup saved, but {count} attachments weren't on this device and were left out.}}",
+  "@exportMissingFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "exporting": "Exporting…",
   "importTitle": "Import…",
   "importSubtitle": "Restore entries from a .thevault file.",
@@ -398,5 +410,6 @@
   "signOut": "Sign out of this device",
   "signOutConfirm": "All data on this device will be deleted. Your passwords stay safe on the server and on your other devices.",
   "lockNow": "Lock",
-  "deviceRevoked": "This device was disconnected from your account."
+  "deviceRevoked": "This device was disconnected from your account.",
+  "deviceUnrecognized": "The server no longer recognizes this device, but your data is still here. Export it from Settings › Backup › Export, then sign out of this device and link it again."
 }

@@ -62,4 +62,41 @@ void main() {
     });
     await finish(tester, t);
   });
+
+  testWidgets('export leaves out attachments that are not on this device instead of failing', (tester) async {
+    // E.g. the server no longer recognizes this device: what is not downloaded yet cannot be.
+    final t = await pumpUnlockedApp(tester, items: [
+      sampleItem('Banca', [('pin', '4821')]),
+      sampleItem('Casa', [('rogito', 'notaio')]),
+    ]);
+    await tester.runAsync(() async {
+      final vault = t.vault;
+      final svc = BackupService(t.app.crypto);
+      final dir = await Directory.systemTemp.createTemp('tv-backup');
+      const password = 'una password lunga';
+      final src = File('${dir.path}/contratto.pdf')..writeAsBytesSync(List.generate(5000, (i) => i % 251));
+      for (final title in ['Banca', 'Casa']) {
+        final item = vault.list(Section.all).firstWhere((i) => i.title == title);
+        vault.save(item.copyWith(files: [await vault.addAttachment(src)]));
+      }
+      final lost = vault.list(Section.all).firstWhere((i) => i.title == 'Casa').files.single;
+      await vault.sync.blobs.file(lost.id).delete();
+
+      final file = '${dir.path}/backup.thevault';
+      final out = await svc.export(vault, file, password);
+      expect((out.items, out.files, out.missing), (2, 1, 1));
+      final summary = await svc.inspect(file, password);
+      expect((summary.items, summary.files), (2, 1));
+
+      for (final i in vault.list(Section.all)) {
+        vault.moveToTrash(i.id);
+        vault.deleteForever(i.id);
+      }
+      expect(await svc.import(vault, file, password, dir.path), 2);
+      expect(vault.list(Section.all).firstWhere((i) => i.title == 'Banca').files, hasLength(1));
+      expect(vault.list(Section.all).firstWhere((i) => i.title == 'Casa').files, isEmpty);
+      await dir.delete(recursive: true);
+    });
+    await finish(tester, t);
+  });
 }

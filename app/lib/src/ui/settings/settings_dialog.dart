@@ -595,9 +595,13 @@ class _ExportDialogState extends State<_ExportDialog> {
       _error = null;
     });
     try {
-      await BackupService(app.crypto).export(app.session!.vault, path, _a.text, appVersion: app.version);
+      final r = await BackupService(app.crypto).export(app.session!.vault, path, _a.text, appVersion: app.version);
       if (!mounted) return;
-      context.toasts.show(l.exportDone);
+      if (r.missing > 0) {
+        context.toasts.show(l.exportMissingFiles(r.missing), duration: const Duration(seconds: 10));
+      } else {
+        context.toasts.show(l.exportDone);
+      }
       Navigator.of(context).pop();
     } catch (e) {
       setState(() {

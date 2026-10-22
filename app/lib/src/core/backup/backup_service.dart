@@ -26,10 +26,13 @@ class BackupException implements Exception {
 }
 
 class BackupSummary {
-  BackupSummary(this.items, this.files, this.created);
+  BackupSummary(this.items, this.files, this.created, {this.missing = 0});
   final int items;
   final int files;
   final DateTime created;
+
+  /// Export only: attachments left out because they are not on this device and could not be downloaded.
+  final int missing;
 }
 
 class BackupService {
@@ -41,7 +44,9 @@ class BackupService {
 
   // ------------------------------------------------------------------ export
 
-  /// Writes every entry (trash included) and every attachment to [path].
+  /// Writes every entry (trash included) and every attachment to [path]. Attachments that are not on this device
+  /// and cannot be downloaded (e.g. the server no longer recognizes it) are left out and counted in
+  /// [BackupSummary.missing]: the entries matter more than failing the whole export.
   Future<BackupSummary> export(VaultController vault, String path, String password, {String appVersion = ''}) async {
     final s = crypto.sodium;
     final salt = crypto.randomBytes(s.crypto.pwhash.saltBytes);
@@ -49,12 +54,23 @@ class BackupService {
     final mem = s.crypto.pwhash.memLimitModerate;
     final key = SecureKey.fromList(s, await VaultCrypto.backupKey(password, salt, ops, mem));
     final items = [...vault.list(Section.all), ...vault.list(Section.trash)];
-    final files = <Attachment>[for (final i in items) ...i.files];
+    final files = <Attachment>[];
+    var missing = 0;
     final created = DateTime.now();
 
-    // Make sure every attachment is on this device.
-    for (final a in files) {
-      if (!await vault.sync.blobs.file(a.id).exists()) await vault.sync.downloadBlob(a.id);
+    // Every attachment must be on this device: download the missing ones, leave out those that fail.
+    for (final a in [for (final i in items) ...i.files]) {
+      final f = vault.sync.blobs.file(a.id);
+      if (!await f.exists()) {
+        try {
+          await vault.sync.downloadBlob(a.id);
+        } catch (_) {}
+      }
+      if (await f.exists()) {
+        files.add(a);
+      } else {
+        missing++;
+      }
     }
 
     Stream<List<int>> frames() async* {
@@ -94,7 +110,7 @@ class BackupService {
     } finally {
       key.dispose();
     }
-    return BackupSummary(items.length, files.length, created);
+    return BackupSummary(items.length, files.length, created, missing: missing);
   }
 
   static Uint8List _frameHeader(int type, int length) {
