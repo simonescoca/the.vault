@@ -586,6 +586,50 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
   risponde «1.1.0»; nel `.dmg` c'è The Vault 1.1.0 per Apple Silicon e Intel, senza il permesso di sviluppo
   `get-task-allow`.
 
+
+### 2026-10-22 — Primo collaudo sul Jetson vero
+
+- **Il Jetson**: Orin Nano 8 GB con JetPack 7 (L4T R39.2.1, Ubuntu 24.04, systemd 255), sistema su NVMe, `sudo` senza
+  password, desktop GNOME. Più nuovo di quanto previsto dalla guida («JetPack 6 o più recente»): va bene.
+- **Studio completo** del progetto e della guida passo per passo su questa macchina (13 agenti in parallelo con verifica
+  incrociata): nessun ostacolo bloccante, 81 punti tra problemi e miglioramenti. I più importanti li ho ricontrollati a
+  mano: la release 1.1.0 è integra (impronte, binario ARM64 che risponde «1.1.0»), ma è compilata con Go 1.26.0.
+- **Cosa ho trovato sul Jetson vero** (e la CI su GitHub non poteva vedere):
+  1. dopo l'installazione `thevault-server` dava «command not found» nei nuovi terminali del desktop: Ubuntu aggiunge
+     `~/.local/bin` al PATH solo se esisteva al momento dell'accesso → ora il programma aggiunge una riga a `~/.bashrc`;
+  2. dopo un'interruzione di corrente l'orologio del Jetson riparte dal **1° gennaio 1970** (niente batteria
+     dell'orologio; visto nel registro di sistema: l'ora giusta arriva dopo circa 40 secondi) → il backup di recupero
+     sarebbe partito 2 ore e mezza dopo, con il nome sbagliato → ora i backup aspettano un orologio affidabile;
+  3. la configurazione proponeva come mittente la tua email principale: la sua password per le app sarebbe rimasta in
+     chiaro su un disco non cifrato → su Linux ora chiede una casella dedicata (Gmail proposta) e avvisa se usi quella
+     principale;
+  4. «Raggiungibile da internet» era una prova fatta dentro la rete di Tailscale → ora chiede a Tailscale se Funnel è
+     davvero attivo e suggerisce la prova da un telefono con i dati mobili; avvisa anche della **scadenza della chiave
+     Tailscale** (180 giorni), che avrebbe spento l'accesso da fuori casa senza dire niente;
+  5. lanciato senza un terminale vero, lo script d'installazione si fermava a metà → ora lo dice subito.
+- **Bug corretti** (server e app):
+  1. qualunque risposta 401 faceva **cancellare tutti i dati** a ogni app collegata (per esempio dopo il ripristino del
+     server da un backup) → ora solo una revoca vera (`device_revoked`) cancella; un dispositivo "sconosciuto" tiene i
+     dati e ti dice di esportarli. Le app fino alla 1.1.0 continuano a cancellarsi se revocate;
+  2. il nuovo dispositivo accettava una chiave scelta dal server durante l'approvazione → ora usa solo la chiave coperta
+     dal codice di verifica, e chiede anche a te di confermare **«Il codice coincide»** sul nuovo dispositivo;
+  3. la pulizia dei backup poteva cancellare allegati ancora necessari ai backup conservati → ora ogni backup elenca i
+     suoi allegati; un allegato perso sul server non blocca più i backup e la sua copia resta;
+  4. l'aggiornamento non aveva una via di ritorno → ora, se la nuova versione non parte, rimette quella di prima
+     (se non ha già aggiornato il database); il backup prima dell'aggiornamento non modifica più il database;
+  5. release compilate con Go 1.26.0 → ora Go 1.26.10 (correzioni di sicurezza), controllato dalla CI;
+  6. un errore 502 di Tailscale (server in riavvio) diventava «Questo non è un server The Vault» → ora «Server non
+     raggiungibile»; i tentativi del codice di accesso non erano atomici (più tentativi in parallelo) → corretto;
+     un blackout poteva far perdere le ultime modifiche confermate → database in modalità `FULL`.
+- **Due revisioni avversariali** (una sul server, una sull'app, con verifica di ogni punto) hanno trovato 18 problemi
+  veri nelle correzioni stesse, tutti sistemati; una terza revisione sulle sole correzioni ne ha trovati altri 10
+  (minori), sistemati anche quelli. Il più importante: il primo tentativo rispondeva 403 ai dispositivi revocati, e le
+  app già pubblicate non si sarebbero più cancellate → ora 401 con il codice `device_revoked` (revocato) o
+  `device_unknown` (sconosciuto), senza dipendere dal numero di versione.
+- **Strumenti sul Jetson**: Go 1.26.10 e Flutter 3.47.6 nella tua Home (`~/.local`), Tailscale dal suo sito.
+- **Test sul Jetson**: server tutti verdi (con controllo delle "race"), app **116 test** verdi (inclusi quelli contro
+  un server malintenzionato e il test con il server vero e più dispositivi); `shellcheck` e `actionlint` puliti.
+
 ---
 
 ## 5. Consegna
@@ -617,8 +661,8 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - App non firmata con un certificato a pagamento: al primo avvio macOS e Windows chiedono conferma (spiegato nella
   guida); dopo ogni aggiornamento su Mac, una volta la password per il Portachiavi.
 - Ripristinare il server da un backup non è ancora gestito dall'app (sezione Fase 7): il paracadute è l'esportazione.
-- I due messaggi dell'app sul server («…configurazione del server sul Mac mini», «…che il Mac mini sia acceso») nominano
-  ancora il Mac mini anche se il server è sul Jetson.
+- I dispositivi revocati **prima** di aggiornare il server alla 1.2.0 il server non li ricorda come revocati: se un
+  dispositivo così aggiornasse l'app prima di ricollegarsi, terrebbe i suoi dati. Aggiorna prima il server, poi le app.
 - Con la tastiera, Tab si muove tra i campi di testo ma non tra i pulsanti (come macOS di serie).
 
 ### Prossimi passi possibili

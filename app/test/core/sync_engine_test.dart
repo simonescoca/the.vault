@@ -46,7 +46,7 @@ class Rig {
   }
 }
 
-/// An error of The Vault, from a server of [version].
+/// An error of The Vault.
 http.Response error(int status, String code, {String version = '1.2.0'}) => http.Response(
       jsonEncode({'error': {'code': code, 'message': code}}),
       status,
@@ -72,8 +72,8 @@ void main() {
     await rig.close();
   });
 
-  test('401 unauthorized: nothing is wiped, the user is told once, the server is not asked at every change', () async {
-    rig.answer = (_) => error(401, 'unauthorized');
+  test('401 device_unknown: nothing is wiped, the user is told once, the server is not asked at every change', () async {
+    rig.answer = (_) => error(401, 'device_unknown');
     await rig.engine.sync();
     expect(rig.revoked, 0, reason: 'an unknown token is not a revocation');
     expect(rig.unrecognized, 1);
@@ -100,7 +100,7 @@ void main() {
 
     // A new 401 later is a new problem: told again.
     rig.db.putPending(id: 'b', op: 'put', data: Uint8List.fromList([4]));
-    rig.answer = (_) => error(401, 'unauthorized');
+    rig.answer = (_) => error(401, 'device_unknown');
     await rig.engine.sync();
     expect(rig.unrecognized, 2);
     expect(rig.revoked, 0);
@@ -108,7 +108,7 @@ void main() {
 
   test('after a 401 it asks again by itself, and resumes once the server knows the device again', () async {
     SyncEngine.unrecognizedRetry = const Duration(milliseconds: 150);
-    rig.answer = (_) => error(401, 'unauthorized');
+    rig.answer = (_) => error(401, 'device_unknown');
     await rig.engine.sync();
     expect(rig.engine.unrecognized, isTrue);
     rig.answer = working;
@@ -123,7 +123,7 @@ void main() {
   });
 
   test('recognized() ends the pause right away (e.g. the real-time channel connected)', () async {
-    rig.answer = (_) => error(401, 'unauthorized');
+    rig.answer = (_) => error(401, 'device_unknown');
     await rig.engine.sync();
     final asked = rig.requests;
     rig.answer = working;
@@ -147,15 +147,15 @@ void main() {
     expect(rig.revoked, 1);
   });
 
-  test('a server before 1.2.0 answers 401 to a revoked device: revoked, as apps up to 1.1.0 did', () async {
+  test('a server up to 1.1.0 answers 401 unauthorized also to a revoked device: wiped, as apps up to 1.1.0 did', () async {
     rig.answer = (_) => error(401, 'unauthorized', version: '1.1.0');
     await rig.engine.sync();
     expect(rig.revoked, 1);
     expect(rig.unrecognized, 0);
   });
 
-  test('a development server ("dev") uses the new rules', () async {
-    rig.answer = (_) => error(401, 'unauthorized', version: 'dev');
+  test('the server version never decides: a pre-tag build reporting 1.1.0-… does not wipe unknown devices', () async {
+    rig.answer = (_) => error(401, 'device_unknown', version: '1.1.0-3-g638711f');
     await rig.engine.sync();
     expect(rig.revoked, 0);
     expect(rig.unrecognized, 1);

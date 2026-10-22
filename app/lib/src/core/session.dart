@@ -38,8 +38,8 @@ class Session {
   /// Called when the server revoked this device (the app must wipe and go back to the start).
   VoidCallback? onRevoked;
 
-  /// Called once when the server no longer knows this device but did not revoke it (401 unauthorized, e.g. its
-  /// data was reset): the local data stays, so the user can export it before linking the device again.
+  /// Called once when the server no longer knows this device but did not revoke it (401 device_unknown, e.g.
+  /// its data was reset): the local data stays, so the user can export it before linking the device again.
   VoidCallback? onUnrecognized;
 
   StreamSubscription<Map<String, dynamic>>? _sub;
@@ -73,6 +73,7 @@ class Session {
     sync.onRevoked = () async => s.onRevoked?.call();
     sync.onUnrecognized = () async => s.onUnrecognized?.call();
     api.onAuthorized = () {
+      realtime.tokenAccepted();
       if (sync.recognized()) unawaited(sync.sync());
     };
     return s;

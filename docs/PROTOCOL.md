@@ -17,7 +17,7 @@ Technical reference. Security rationale: `SECURITY.md`. Behaviour: `SPEC.md`.
 | Status | Codes (examples) |
 |---|---|
 | 400 | `bad_request`, `invalid_email`, `invalid_field` |
-| 401 | `unauthorized` (missing or unknown token: e.g. a server restored from a backup; the app keeps its data), `device_revoked` (token of a revoked device: the app wipes itself; apps up to 1.1.0 wipe on any 401) |
+| 401 | `device_unknown` (missing or unknown token: e.g. a server restored from a backup; the app keeps its data), `device_revoked` (token of a revoked device: the app wipes itself). Servers up to 1.1.0 answered `unauthorized` to both, and apps up to 1.1.0 wipe on any 401 |
 | 403 | `forbidden` (wrong device status for this call) |
 | 404 | `not_found` |
 | 409 | `conflict` (stale `baseRev`), `already_initialized` |
@@ -34,7 +34,7 @@ Technical reference. Security rationale: `SECURITY.md`. Behaviour: `SPEC.md`.
 | `pending` | OTP ok, vault exists, waiting for approval | `GET /v1/me`, approvals (own), recovery, WS (own approval events), `DELETE /v1/devices/self` |
 | `active` | full access | everything except `vault/init` and the pending-only calls |
 | (revoked) | device deleted, token hash kept in `revoked_devices` | nothing → `401 device_revoked` (also the WS handshake) |
-| (signed out) | device deleted by itself | nothing → `401` |
+| (signed out) | device deleted by itself | nothing → `401 device_unknown` |
 
 ## 3. Endpoints
 

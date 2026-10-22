@@ -83,7 +83,12 @@ class AppController extends ChangeNotifier {
     final id = await secrets.readIdentity();
     final vk = await secrets.readVaultKey();
     if (id == null || !id.isActive || vk == null) {
-      if (id != null) await _wipeLocal();
+      if (id != null) {
+        // An interrupted first access: the server may count this device as linked already (approved while the
+        // app was closed). Sign it out there too, without waiting.
+        if (!id.isActive) unawaited(account.signOutQuietly(id));
+        await _wipeLocal();
+      }
       _set(AppPhase.onboarding);
       return;
     }

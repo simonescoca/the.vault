@@ -208,22 +208,93 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('confirmed here first: no way out while the key may be on its way, then the PIN', (tester) async {
+  testWidgets('confirmed here first, then the other device approves: the PIN', (tester) async {
     final server = FakeServer(crypto);
     final app = await toApproval(tester, server.handle);
     server.state = 'responded';
     await poll(tester);
-    expect(find.text('Non ho altri dispositivi'), findsOneWidget);
     await tester.tap(find.text('Il codice coincide'));
     await poll(tester);
     expect(find.text('In attesa di approvazione…'), findsOneWidget);
-    expect(find.text('Non ho altri dispositivi'), findsNothing);
     server.approve();
     await poll(tester);
     await poll(tester);
     expect(find.text('Scegli un PIN di 6 cifre'), findsOneWidget);
     expect(await app.secrets.readVaultKey(), server.vaultKey.extractBytes());
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('confirmed here, but the other device never answers: still a way out', (tester) async {
+    final server = FakeServer(crypto);
+    await toApproval(tester, server.handle);
+    server.state = 'responded';
+    await poll(tester);
+    await tester.tap(find.text('Il codice coincide'));
+    await poll(tester);
+    expect(find.text('In attesa di approvazione…'), findsOneWidget);
+    await tester.tap(find.text('Non ho altri dispositivi'));
+    await poll(tester);
+    expect(server.calls, contains('DELETE /v1/approvals/ap1'));
+    expect(find.text('Codice di emergenza'), findsOneWidget);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('emergency code refused because this device is no longer pending: signed out, back to the email', (tester) async {
+    final server = FakeServer(crypto);
+    final app = await toApproval(tester, (r) async => r.url.path == '/v1/recovery'
+        ? http.Response('{"error":{"code":"forbidden","message":"not allowed for a device in status active"}}', 403)
+        : server.handle(r));
+    await tester.tap(find.text('Non ho altri dispositivi'));
+    await poll(tester);
+    await tester.enterText(find.byType(TextField), 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01');
+    await tester.tap(find.text('Apri la cassaforte'));
+    await poll(tester);
+    expect(server.calls, contains('DELETE /v1/devices/self'));
+    expect(find.text('La tua email'), findsOneWidget);
+    expect(find.text("Questo dispositivo non è più collegato al tuo account: ricomincia dall'email."), findsOneWidget);
+    expect(find.textContaining('not allowed'), findsNothing);
+    expect(await app.secrets.readIdentity(), isNull);
+    await tester.pumpAndSettle();
+  });
+
+  test('an interrupted first access is signed out on the server too at the next start', () async {
+    final calls = <String>[];
+    final dir = await Directory.systemTemp.createTemp('tv-ui');
+    final secrets = MemorySecretStore();
+    final kp = crypto.newBoxKeyPair();
+    await secrets.writeIdentity(Identity(
+      server: Uri.parse('https://vault.example.ts.net'),
+      email: 'me@example.com',
+      userId: 'u1',
+      deviceId: 'd2',
+      deviceName: 'PC',
+      platform: 'windows',
+      token: 'tok',
+      devicePublicKey: kp.publicKey,
+      deviceSecretKey: kp.secretKey.extractBytes(),
+      status: 'pending', // e.g. closed while waiting for "Il codice coincide" after the other device approved
+    ));
+    final app = AppController(
+      crypto: crypto,
+      secrets: secrets,
+      platform: FakePlatform(),
+      settings: AppSettings(File('${dir.path}/settings.json')),
+      dataDir: dir.path,
+      online: false,
+      httpClient: MockClient((r) async {
+        calls.add('${r.method} ${r.url.path}');
+        return http.Response('', 204);
+      }),
+    );
+    await app.init();
+    expect(app.phase, AppPhase.onboarding);
+    expect(await secrets.readIdentity(), isNull);
+    for (var i = 0; i < 50 && calls.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(calls, ['DELETE /v1/devices/self']);
+    app.dispose();
+    await dir.delete(recursive: true);
   });
 
   testWidgets('"Non ho altri dispositivi" after the other device approved: signed out, back to the email', (tester) async {
@@ -246,7 +317,7 @@ void main() {
   testWidgets('this device is no longer known (401 at the start): said so, and start again from the email', (tester) async {
     final server = FakeServer(crypto);
     await toApproval(tester, (r) async => r.method == 'POST' && r.url.path == '/v1/approvals'
-        ? http.Response('{"error":{"code":"unauthorized","message":"unknown device"}}', 401)
+        ? http.Response('{"error":{"code":"device_unknown","message":"unknown device"}}', 401)
         : server.handle(r));
     expect(find.text("Questo dispositivo non è più collegato al tuo account: ricomincia dall'email."), findsOneWidget);
     expect(find.text('Riprova'), findsNothing);

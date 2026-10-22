@@ -11,32 +11,20 @@ import '../storage/local_db.dart';
 
 /// The server answered with an error.
 class ApiException implements Exception {
-  ApiException(this.status, this.code, this.message, [this.body = const {}, this.serverVersion]);
+  ApiException(this.status, this.code, this.message, [this.body = const {}]);
   final int status;
   final String code;
   final String message;
   final Map<String, dynamic> body;
 
-  /// The server's version (X-TheVault-Server header), if the answer came with it.
-  final String? serverVersion;
-
   int? get retryAfter => (body['retryAfter'] as num?)?.toInt();
 
-  /// This device was revoked: it must forget everything. Servers before 1.2.0 answer 401 both to a revoked and
-  /// to an unknown device, so from them any 401 means revoked (as apps up to 1.1.0 assumed).
-  bool get deviceRevoked => code == 'device_revoked' || (status == 401 && olderThan(serverVersion, 1, 2));
+  /// This device was revoked: it must forget everything. 'unauthorized' comes only from servers up to 1.1.0,
+  /// which answered it to revoked and unknown devices alike: for them the old rule (wipe) stays.
+  bool get deviceRevoked => status == 401 && (code == 'device_revoked' || code == 'unauthorized');
 
   /// The server does not know this device's token but did not revoke it (e.g. its data was reset).
-  bool get deviceUnknown => status == 401 && code == 'unauthorized' && !deviceRevoked;
-
-  /// True if [version] is a release older than [major].[minor] ("1.1.0" < 1.2). Builds without a version
-  /// number ("dev", "ci") and a missing header count as new.
-  static bool olderThan(String? version, int major, int minor) {
-    final m = RegExp(r'^v?(\d+)\.(\d+)\.(\d+)').firstMatch(version?.trim() ?? '');
-    if (m == null) return false;
-    final a = int.parse(m[1]!), b = int.parse(m[2]!);
-    return a < major || (a == major && b < minor);
-  }
+  bool get deviceUnknown => status == 401 && code == 'device_unknown';
 
   @override
   String toString() => 'ApiException($status $code: $message)';
@@ -187,7 +175,7 @@ class ApiClient {
       if (_connectionError(e)) throw NetworkException(e);
       rethrow;
     }
-    if (resp.statusCode >= 400) throw _errorFor(resp.statusCode, resp.body, resp.headers);
+    if (resp.statusCode >= 400) throw _errorFor(resp.statusCode, resp.body);
     final Map<String, dynamic> json;
     try {
       json = resp.body.isEmpty ? const {} : Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
@@ -206,8 +194,7 @@ class ApiClient {
   /// The exception for an answer with an error status. A 5xx that is not an error of The Vault (empty, an
   /// HTML page…) comes from something in front of the server, e.g. Tailscale Funnel answering 502 while the
   /// server is stopped: the server is unreachable, not "something else".
-  static Exception _errorFor(int status, String body, Map<String, String> headers) {
-    final version = headers['x-thevault-server'];
+  static Exception _errorFor(int status, String body) {
     Object? json;
     try {
       json = jsonDecode(body);
@@ -215,11 +202,11 @@ class ApiClient {
     final j = json is Map ? Map<String, dynamic>.from(json) : null;
     final e = j?['error'];
     if (e is Map && e['code'] is String) {
-      return ApiException(status, e['code'] as String, e['message'] as String? ?? '', j!, version);
+      return ApiException(status, e['code'] as String, e['message'] as String? ?? '', j!);
     }
     if (status >= 500) return NetworkException(HttpException('HTTP $status: no answer from the server behind this address'));
-    if (j == null) return ApiException(status, 'bad_response', 'unexpected response from the server', const {}, version);
-    return ApiException(status, 'error', '', j, version);
+    if (j == null) return ApiException(status, 'bad_response', 'unexpected response from the server');
+    return ApiException(status, 'error', '', j);
   }
 
   // ------------------------------------------------------------------ login
@@ -386,7 +373,7 @@ class ApiClient {
       if (_connectionError(e)) throw NetworkException(e);
       rethrow;
     }
-    if (resp.statusCode != 204) throw _errorFor(resp.statusCode, resp.body, resp.headers);
+    if (resp.statusCode != 204) throw _errorFor(resp.statusCode, resp.body);
   }
 
   Future<void> completeBlob(String id, int parts, String sha256Hex) =>
@@ -399,7 +386,7 @@ class ApiClient {
     try {
       final resp = await _http.send(req).timeout(timeout);
       if (resp.statusCode != 200 && resp.statusCode != 206) {
-        throw _errorFor(resp.statusCode, await resp.stream.bytesToString(), resp.headers);
+        throw _errorFor(resp.statusCode, await resp.stream.bytesToString());
       }
       if (from > 0 && resp.statusCode == 200) {
         throw ApiException(200, 'range_ignored', 'the server ignored the range request');

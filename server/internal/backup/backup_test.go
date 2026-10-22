@@ -165,7 +165,10 @@ func TestPruneKeepsAttachmentsOfKeptSnapshots(t *testing.T) {
 		"2026-10-01_033000": {"u/a"},
 		"2026-11-15_033000": {"u/a", "u/b"},
 		"2026-11-30_033000": {"u/b"},
-	}, "u/a", "u/b", "u/old")
+	}, "u/a", "u/b", "u/old", "u/left.tmp", "u/copying.tmp")
+	// A partial copy left by an interruption goes; one younger than an hour may be in progress.
+	left := filepath.Join(root, "blobs", "u", "left.tmp")
+	os.Chtimes(left, time.Now().Add(-2*time.Hour), time.Now().Add(-2*time.Hour))
 	old := filepath.Join(root, "blobs", "u", "a")
 	os.Chtimes(old, now.AddDate(0, -3, 0), now.AddDate(0, -3, 0))
 	if err := prune(root, 30, now); err != nil {
@@ -177,8 +180,11 @@ func TestPruneKeepsAttachmentsOfKeptSnapshots(t *testing.T) {
 	if !exists(old) || !exists(filepath.Join(root, "blobs", "u", "b")) {
 		t.Fatal("an attachment needed by a kept snapshot was deleted")
 	}
-	if exists(filepath.Join(root, "blobs", "u", "old")) {
+	if exists(filepath.Join(root, "blobs", "u", "old")) || exists(left) {
 		t.Fatal("an attachment no snapshot needs was kept")
+	}
+	if !exists(filepath.Join(root, "blobs", "u", "copying.tmp")) {
+		t.Fatal("a copy that may be in progress was removed")
 	}
 	// Once the last snapshot that needs it is gone, it goes too.
 	if err := prune(root, 30, now.AddDate(0, 0, 16)); err != nil {
@@ -211,9 +217,16 @@ func TestMissingAttachmentAndUnfinishedSnapshots(t *testing.T) {
 	}
 	defer st.Close()
 	st.EnsureUser(ctx, uid, "a@b.it")
-	// Complete in the database, but its file is gone.
+	// Complete in the database and used by a record, but its file is gone.
 	st.CreateBlob(ctx, &store.Blob{UserID: uid, ID: bid, Size: 10, PartSize: 1024})
 	st.CompleteBlob(ctx, uid, bid, "x")
+	if _, _, err := st.PutRecord(ctx, uid, "d1", "33333333-3333-4333-8333-333333333333", 0, []byte("x"), []string{bid}); err != nil {
+		t.Fatal(err)
+	}
+	// An orphan the cleanup deleted while the backup ran is not "missing".
+	orphan := "44444444-4444-4444-8444-444444444444"
+	st.CreateBlob(ctx, &store.Blob{UserID: uid, ID: orphan, Size: 10, PartSize: 1024})
+	st.CompleteBlob(ctx, uid, orphan, "y")
 	// Left by a backup interrupted two hours ago.
 	stale := filepath.Join(cfg.Backup.Dir, "snapshots", ".tmp-2026-10-01_033000-123")
 	os.MkdirAll(stale, 0o700)
@@ -295,6 +308,7 @@ func TestTheOnlyCopyOfALostAttachmentIsKept(t *testing.T) {
 	files.Finalize(uid, bid, int64(len(content)))
 	st.CreateBlob(ctx, &store.Blob{UserID: uid, ID: bid, Size: int64(len(content)), PartSize: 1024})
 	st.CompleteBlob(ctx, uid, bid, "x")
+	st.PutRecord(ctx, uid, "d1", "33333333-3333-4333-8333-333333333333", 0, []byte("x"), []string{bid})
 	now := time.Date(2026, 10, 2, 3, 30, 0, 0, time.Local)
 	if _, err := run(ctx, cfg, st, now); err != nil {
 		t.Fatal(err)

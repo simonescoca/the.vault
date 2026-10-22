@@ -639,7 +639,7 @@ func TestRevokeAndSignOut(t *testing.T) {
 		t.Fatal("revoked device socket not closed")
 	}
 	ws1.wait("devices.changed")
-	// A revoked device is told so (it forgets its data); an unknown token only gets "unauthorized" (it keeps
+	// A revoked device is told so (it forgets its data); an unknown token gets "device_unknown" (it keeps
 	// them). Both are 401: older apps wipe themselves on any 401.
 	if code, out := d2.req("GET", "/v1/me", nil); code != 401 || errCode(out) != "device_revoked" {
 		t.Fatalf("revoked token must get 401 device_revoked: %d %v", code, out)
@@ -652,8 +652,8 @@ func TestRevokeAndSignOut(t *testing.T) {
 		t.Fatalf("revoked token must not open the WebSocket: %v %v", err, resp)
 	}
 	unknown := &client{e: e, token: enc(rnd(32))}
-	if code, out := unknown.req("GET", "/v1/me", nil); code != 401 || errCode(out) != "unauthorized" {
-		t.Fatalf("unknown token must get 401: %d %v", code, out)
+	if code, out := unknown.req("GET", "/v1/me", nil); code != 401 || errCode(out) != "device_unknown" {
+		t.Fatalf("unknown token must get 401 device_unknown: %d %v", code, out)
 	}
 	d1.must(200, "PATCH", "/v1/devices/self", map[string]any{"name": "Mac mini di Simone"})
 	devs := d1.must(200, "GET", "/v1/devices", nil)["devices"].([]any)

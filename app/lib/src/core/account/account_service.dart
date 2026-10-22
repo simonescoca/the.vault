@@ -143,12 +143,15 @@ class AccountService {
 
   /// Removes everything about this device (sign out, revoked device, too many PIN errors).
   Future<void> forgetDevice({Identity? id, bool tellServer = true}) async {
-    if (id != null && tellServer) {
-      try {
-        await api(id.server, token: id.token).signOut();
-      } catch (_) {}
-    }
+    if (id != null && tellServer) await signOutQuietly(id);
     await secrets.deleteAll();
+  }
+
+  /// Signs [id] out on the server, best effort: a short wait, failures (e.g. offline) ignored.
+  Future<void> signOutQuietly(Identity id) async {
+    try {
+      await api(id.server, token: id.token).signOut().timeout(const Duration(seconds: 5));
+    } catch (_) {}
   }
 }
 
@@ -267,6 +270,9 @@ class ApprovalRequest {
           _showCode();
         case 'approved':
           _approved = true;
+          // Our reveal reached the server (it approves only after it) but its answer got lost: same rule as
+          // 'revealed' above. The user still has to confirm the code here.
+          if (!_revealed && _approverKey != null && _pin(a)) _showCode();
           await _onApproved(a);
         case 'rejected' || 'expired' || 'cancelled':
           _finish(a.state);

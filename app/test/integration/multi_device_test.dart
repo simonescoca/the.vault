@@ -325,9 +325,14 @@ void main() {
       dsess.realtime.start();
     }
 
-    // Recognized again before the user unlocks: syncing resumes and the warning is no longer due.
-    await serverKnows(deskId.token);
-    await eventually(() => !dsess.sync.unrecognized, what: 'recognized again');
+    // Recognized again before the user unlocks, seen by a request (REST): syncing resumes, the real-time channel
+    // refused at start comes back at once (not after its 10-minute wait), and the warning is no longer due.
+    await eventually(() => dsess.realtime.refused, what: 'real-time channel refused');
+    dsess.api.token = deskId.token;
+    dsess.realtime.token = deskId.token;
+    await dsess.sync.sync(force: true);
+    expect(dsess.sync.unrecognized, isFalse);
+    await eventually(() => dsess.realtime.connected.value, what: 'real-time channel back at once');
     await deskApp.unlockWithPin('123456');
     await Future<void>.delayed(const Duration(milliseconds: 300));
     expect(deskNotices, isEmpty, reason: 'recognized again meanwhile: no warning');

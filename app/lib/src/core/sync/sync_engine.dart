@@ -47,22 +47,22 @@ class SyncEngine {
   /// Record ids that changed locally because of a sync.
   void Function(Set<String> ids)? onChanged;
 
-  /// The server says this device was revoked (code device_revoked, or any 401 from a server before 1.2.0):
-  /// the app forgets everything. Called once; afterwards this engine does nothing.
+  /// The server says this device was revoked (401 device_revoked, or 401 unauthorized from a server up to
+  /// 1.1.0): the app forgets everything. Called once; afterwards this engine does nothing.
   Future<void> Function()? onRevoked;
 
-  /// The server does not know this device's token (401 unauthorized), e.g. its data was reset or restored from
-  /// an older backup. The local data stays. Called once, until the server accepts the token again.
+  /// The server does not know this device's token (401 device_unknown), e.g. its data was reset or restored
+  /// from an older backup. The local data stays. Called once, until the server accepts the token again.
   Future<void> Function()? onUnrecognized;
 
-  /// After a 401 unauthorized, syncs ask the server again only after this time (no point in insisting with
+  /// After a 401 device_unknown, syncs ask the server again only after this time (no point in insisting with
   /// every change), unless the server shows it knows the device again ([recognized]).
   static Duration unrecognizedRetry = const Duration(minutes: 10);
   DateTime? _unrecognizedAt;
   Timer? _retry;
   bool _revoked = false;
 
-  /// True from a 401 unauthorized until the server accepts this device's token again.
+  /// True from a 401 device_unknown until the server accepts this device's token again.
   bool get unrecognized => _unrecognizedAt != null;
 
   /// The server accepted this device's token (the real-time channel connected, or a request succeeded):

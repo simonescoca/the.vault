@@ -28,6 +28,9 @@ class Realtime {
   bool _refused = false;
   static Duration refusedRetry = const Duration(minutes: 10);
 
+  /// The server refused the token at the last attempt.
+  bool get refused => _refused;
+
   Stream<Map<String, dynamic>> get events => _events.stream;
 
   void start() {
@@ -43,6 +46,13 @@ class Realtime {
     _ws = null;
     connected.value = false;
     await ws?.close(WebSocketStatus.normalClosure);
+  }
+
+  /// The server accepted this device's token again (a request succeeded): stop waiting out a refusal.
+  void tokenAccepted() {
+    if (!_refused) return;
+    _refused = false;
+    reconnectNow();
   }
 
   /// Reconnect right away (e.g. after the network came back).

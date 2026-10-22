@@ -114,6 +114,14 @@ func (s *Store) DeleteBlob(ctx context.Context, userID, blobID string) error {
 }
 
 // AllCompleteBlobIDs lists every complete blob (used by backups).
+// BlobNeeded reports whether a blob is complete and used by a record (not an orphan being cleaned up).
+func (s *Store) BlobNeeded(ctx context.Context, userID, id string) (bool, error) {
+	var n int
+	err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM blobs b WHERE b.user_id = ? AND b.id = ? AND b.state = ?
+	  AND EXISTS (SELECT 1 FROM record_blobs r WHERE r.user_id = b.user_id AND r.blob_id = b.id)`, userID, id, BlobComplete).Scan(&n)
+	return n > 0, err
+}
+
 func (s *Store) AllCompleteBlobIDs(ctx context.Context) ([][2]string, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT user_id, id FROM blobs WHERE state = ?`, BlobComplete)
 	if err != nil {

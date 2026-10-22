@@ -170,20 +170,21 @@ func (s *Server) auth(statuses []string, h http.HandlerFunc) http.Handler {
 		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		raw, err := decodeB64(strings.TrimSpace(tok))
 		if !ok || err != nil || len(raw) != 32 {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid token")
+			writeError(w, http.StatusUnauthorized, "device_unknown", "missing or invalid token")
 			return
 		}
 		sum := sha256.Sum256(raw)
 		dev, err := s.Store.DeviceByTokenHash(r.Context(), sum[:])
 		if errors.Is(err, store.ErrNotFound) {
 			// Revoked: the app forgets everything. Unknown (e.g. a server restored from a backup): it keeps its data.
-			// Both are 401, told apart by the code: apps up to 1.1.0 wipe themselves on any 401, as before.
+			// Both are 401, told apart by the code: apps up to 1.1.0 wipe themselves on any 401, as before (and the
+			// servers up to 1.1.0 answered "unauthorized" to both).
 			if revoked, err := s.Store.IsRevokedToken(r.Context(), sum[:]); err != nil {
 				s.internal(w, err)
 			} else if revoked {
 				writeError(w, http.StatusUnauthorized, "device_revoked", "this device was disconnected from the vault")
 			} else {
-				writeError(w, http.StatusUnauthorized, "unauthorized", "unknown device")
+				writeError(w, http.StatusUnauthorized, "device_unknown", "unknown device")
 			}
 			return
 		}

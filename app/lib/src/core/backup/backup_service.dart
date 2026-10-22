@@ -59,7 +59,10 @@ class BackupService {
     final created = DateTime.now();
 
     // Every attachment must be on this device: download the missing ones, leave out those that fail.
+    // Entries can share one (conflict copies): written once.
+    final seen = <String>{};
     for (final a in [for (final i in items) ...i.files]) {
+      if (!seen.add(a.id)) continue;
       final f = vault.sync.blobs.file(a.id);
       if (!await f.exists()) {
         try {
@@ -213,13 +216,24 @@ class BackupService {
       });
       if (readItems != expectedItems || readFiles != expectedFiles) throw BackupException('truncated file');
       var written = 0;
+      // Entries can share an attachment (conflict copies): it is added once and shared again.
+      final addedById = <String, Attachment>{};
       for (final item in incoming) {
+        final existing = vault.byId(item.id);
         final files = <Attachment>[];
         for (final a in item.files) {
-          final f = extracted[a.id];
-          if (f == null) continue; // attachment missing from the backup
-          final named = await f.rename(p.join(tmp.path, '${a.id}-${a.name.replaceAll(RegExp(r'[\\/]'), '_')}'));
-          final added = await vault.addAttachment(named, mime: a.mime);
+          var added = addedById[a.id];
+          if (added == null) {
+            final f = extracted[a.id];
+            if (f == null) {
+              // Left out of the export (it was not on that device): keep the copy this vault has, if any.
+              final kept = existing?.files.where((e) => e.id == a.id).firstOrNull;
+              if (kept != null) files.add(kept);
+              continue;
+            }
+            final named = await f.rename(p.join(tmp.path, '${a.id}-${a.name.replaceAll(RegExp(r'[\\/]'), '_')}'));
+            added = addedById[a.id] = await vault.addAttachment(named, mime: a.mime);
+          }
           files.add(Attachment(id: added.id, name: a.name, size: added.size, mime: a.mime, key: added.key, added: a.added));
         }
         vault.save(item.copyWith(files: files));

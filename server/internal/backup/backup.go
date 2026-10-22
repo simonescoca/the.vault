@@ -87,6 +87,9 @@ func run(ctx context.Context, cfg *config.Config, st *store.Store, now time.Time
 		src, dst := files.BlobPath(ub[0], ub[1]), filepath.Join(root, "blobs", ub[0], ub[1])
 		in, err := os.Stat(src)
 		if errors.Is(err, os.ErrNotExist) {
+			if needed, err := st.BlobNeeded(ctx, ub[0], ub[1]); err == nil && !needed {
+				continue // an orphan deleted by the cleanup meanwhile: not lost
+			}
 			// Listed in the database but not on disk: one lost attachment must not stop every backup, and the
 			// copy in the backups (now the only one) must stay.
 			m.MissingBlobs = append(m.MissingBlobs, ub[0]+"/"+ub[1])
@@ -244,9 +247,15 @@ func prune(root string, keepDays int, now time.Time) error {
 			continue
 		}
 		for _, f := range files {
-			if !needed[u.Name()+"/"+f.Name()] && !strings.HasSuffix(f.Name(), ".tmp") {
-				_ = os.Remove(filepath.Join(root, "blobs", u.Name(), f.Name()))
+			if needed[u.Name()+"/"+f.Name()] {
+				continue
 			}
+			// A ".tmp" is a copy left by an interruption (one of an older server still running during an
+			// upgrade, which does not take the lock, is younger than an hour).
+			if info, err := f.Info(); err == nil && strings.HasSuffix(f.Name(), ".tmp") && time.Since(info.ModTime()) < time.Hour {
+				continue
+			}
+			_ = os.Remove(filepath.Join(root, "blobs", u.Name(), f.Name()))
 		}
 	}
 	return nil

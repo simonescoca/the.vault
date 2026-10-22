@@ -268,6 +268,16 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     try {
       _vaultKey = await _account.useRecoveryCode(_identity!, code);
       _go(_Step.pin);
+    } on ApiException catch (e) {
+      if (e.status != 401 && e.status != 403) {
+        setState(() => _error = _errorText(e));
+        return;
+      }
+      // No longer pending (e.g. approved meanwhile by another device) or no longer known: sign out, start again.
+      await _account.forgetDevice(id: _identity!);
+      if (!mounted) return;
+      _relink();
+      setState(() => _error = context.l.approvalSignedOut);
     } catch (e) {
       setState(() => _error = _errorText(e));
     } finally {
@@ -499,9 +509,9 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             ],
           ],
           const SizedBox(height: 36),
-          // Not once the code was confirmed here and the request is still running: the key may be on its way.
-          if (!_approvalSignedOut && !(_codeConfirmed && ended == null))
-            VButton(label: l.noOtherDevice, kind: VButtonKind.text, onPressed: _noOtherDevice),
+          // Always a way out, also after confirming (the other device may never answer): cancel() leaves a grant
+          // already being saved alone, and signs this device out if the server approved it meanwhile.
+          if (!_approvalSignedOut) VButton(label: l.noOtherDevice, kind: VButtonKind.text, onPressed: _noOtherDevice),
         ]);
 
       case _Step.recovery:

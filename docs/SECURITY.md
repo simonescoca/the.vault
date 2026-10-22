@@ -192,8 +192,9 @@ quell'account si sospendono per un'ora. Ogni nuovo collegamento genera un'email 
   la guida consiglia una casella dedicata all'invio dei codici.
 - Un dispositivo disconnesso perde subito l'accesso: il server cancella il dispositivo, ne ricorda l'impronta del token
   (per rispondere `401 device_revoked`) e, se è connesso, gli manda l'ordine di cancellare i dati locali. Solo questi
-  due segnali fanno cancellare i dati a un'app: un semplice "token sconosciuto" (`401 unauthorized`, per esempio dopo il ripristino
-  del server da un backup) lascia i dati sul dispositivo, così si possono esportare prima di ricollegarlo.
+  due segnali fanno cancellare i dati a un'app: un semplice "token sconosciuto" (`401 device_unknown`, per esempio
+  dopo il ripristino del server da un backup) lascia i dati sul dispositivo, così si possono esportare prima di
+  ricollegarlo.
 
 ## 11. Backup su file (Esporta)
 

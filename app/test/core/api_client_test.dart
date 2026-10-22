@@ -43,7 +43,7 @@ void main() {
       await expectLater(
           answering(401, '{"error":{"code":"device_revoked","message":"this device was disconnected"}}').records(0),
           throwsA(isApi(401, 'device_revoked')));
-      await expectLater(answering(401, '{"error":{"code":"unauthorized","message":"unknown device"}}').records(0), throwsA(isApi(401, 'unauthorized')));
+      await expectLater(answering(401, '{"error":{"code":"device_unknown","message":"unknown device"}}').records(0), throwsA(isApi(401, 'device_unknown')));
     });
 
     test('a 4xx that is not JSON is a bad response, not a revocation', () async {
@@ -63,48 +63,33 @@ void main() {
   });
 
   group('revoked or unknown device', () {
-    Future<ApiException> refused(String code, {String? version, int status = 401}) async {
+    Future<ApiException> refused(String code, {int status = 401, Map<String, String> headers = const {}}) async {
       final body = jsonEncode({'error': {'code': code, 'message': code}});
       try {
-        await answering(status, body, headers: {'x-thevault-server': ?version}).records(0);
+        await answering(status, body, headers: headers).records(0);
       } on ApiException catch (e) {
         return e;
       }
       fail('no error');
     }
 
-    test('decided by the code, whatever the status', () async {
-      final revoked = await refused('device_revoked', version: '1.2.0');
-      expect((revoked.deviceRevoked, revoked.deviceUnknown, revoked.serverVersion), (true, false, '1.2.0'));
-      final revoked403 = await refused('device_revoked', status: 403);
-      expect((revoked403.deviceRevoked, revoked403.deviceUnknown), (true, false));
-      for (final v in ['1.2.0', '1.10.3', '2.0.0', 'dev', 'ci', null]) {
-        final unknown = await refused('unauthorized', version: v);
+    test('decided by the code of The Vault, never by the server version', () async {
+      final revoked = await refused('device_revoked');
+      expect((revoked.deviceRevoked, revoked.deviceUnknown), (true, false));
+      // A server built from a branch before its tag reports e.g. "1.1.0-3-g638711f": it must not matter.
+      for (final v in ['1.1.0-3-g638711f', '1.1.0', '1.2.0', 'dev']) {
+        final unknown = await refused('device_unknown', headers: {'x-thevault-server': v});
         expect((unknown.deviceRevoked, unknown.deviceUnknown), (false, true), reason: 'server $v');
       }
-      final forbidden = await refused('forbidden', status: 403, version: '1.2.0');
+      final forbidden = await refused('forbidden', status: 403);
       expect((forbidden.deviceRevoked, forbidden.deviceUnknown), (false, false));
+      final revoked403 = await refused('device_revoked', status: 403);
+      expect(revoked403.deviceRevoked, isFalse, reason: 'only a 401');
     });
 
-    test('servers before 1.2.0 cannot tell revoked from unknown: any 401 of theirs means revoked', () async {
-      for (final v in ['1.1.0', '1.0.1', 'v1.1.0', '1.1.0-rc1']) {
-        final e = await refused('unauthorized', version: v);
-        expect((e.deviceRevoked, e.deviceUnknown), (true, false), reason: 'server $v');
-      }
-      final forbidden = await refused('forbidden', status: 403, version: '1.1.0');
-      expect(forbidden.deviceRevoked, isFalse, reason: 'only 401');
-    });
-
-    test('version comparison', () {
-      expect(ApiException.olderThan('1.1.0', 1, 2), isTrue);
-      expect(ApiException.olderThan('1.1.9', 1, 2), isTrue);
-      expect(ApiException.olderThan('0.9.0', 1, 2), isTrue);
-      expect(ApiException.olderThan('1.2.0', 1, 2), isFalse);
-      expect(ApiException.olderThan('1.2.0-rc1', 1, 2), isFalse);
-      expect(ApiException.olderThan('2.0.0', 1, 2), isFalse);
-      expect(ApiException.olderThan('dev', 1, 2), isFalse);
-      expect(ApiException.olderThan('', 1, 2), isFalse);
-      expect(ApiException.olderThan(null, 1, 2), isFalse);
+    test('servers up to 1.1.0 answer 401 unauthorized to revoked devices too: the old rule (wipe) stays', () async {
+      final e = await refused('unauthorized');
+      expect((e.deviceRevoked, e.deviceUnknown), (true, false));
     });
 
     test('a successful answer with the token says the server knows this device', () async {
@@ -112,7 +97,7 @@ void main() {
       final ok = answering(200, '{"records":[],"latest":0,"more":false}')..onAuthorized = () => authorized++;
       await ok.records(0);
       expect(authorized, 1);
-      final ko = answering(401, '{"error":{"code":"unauthorized","message":""}}')..onAuthorized = () => authorized++;
+      final ko = answering(401, '{"error":{"code":"device_unknown","message":""}}')..onAuthorized = () => authorized++;
       await expectLater(ko.records(0), throwsA(isA<ApiException>()));
       expect(authorized, 1);
     });

@@ -252,6 +252,36 @@ void main() {
     expect(r.code, isNull, reason: 'no code computed from values chosen after our nonce was known');
   });
 
+  test('reveal answer lost, then approved at once (honest server): the code is shown late, nothing refused', () async {
+    final r = Rig(crypto);
+    var first = true;
+    final inner = r.server.handle;
+    final account = AccountService(
+      crypto: crypto,
+      secrets: r.secrets,
+      httpClient: MockClient((req) async {
+        final resp = await inner(req);
+        if (req.url.path.endsWith('/reveal') && first) {
+          first = false;
+          r.server.approve(); // the other device shows its code at once and the user approves there
+          throw http.ClientException('timeout');
+        }
+        return resp;
+      }),
+    );
+    final request = account.requestApproval(r.identity);
+    request.progress.listen(r.progress.add);
+    r.server.state = 'responded';
+    await r.until(() => r.code != null, 'late code');
+    expect(r.code, r.server.expectedCode());
+    expect(r.ended, isNull);
+    await r.polls();
+    await r.expectNothingSaved();
+    await request.confirmCode();
+    await r.until(() => r.granted, 'granted');
+    expect(r.server.calls, isNot(contains('DELETE /v1/devices/self')));
+  });
+
   test('vault without a key check → invalid', () async {
     final r = Rig(crypto)..start();
     r.server.sendKeyCheck = false;
@@ -326,7 +356,7 @@ void main() {
     http.Response err(int status, String code) => http.Response(jsonEncode({'error': {'code': code, 'message': code}}), status);
 
     test('unknown or revoked device: start again from the email (no endless Retry)', () async {
-      for (final answer in [err(401, 'unauthorized'), err(401, 'device_revoked')]) {
+      for (final answer in [err(401, 'device_unknown'), err(401, 'device_revoked'), err(401, 'unauthorized')]) {
         final r = Rig(crypto);
         final end = await startWith(r, answer);
         expect((end.state, end.signedOut), ('cancelled', true), reason: answer.body);
