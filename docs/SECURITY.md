@@ -115,14 +115,18 @@ Notazione: `H = BLAKE2b-256`, `D2` = nuovo dispositivo, `D1` = dispositivo già 
 4. **D1** verifica `c2 == H(... ‖ pk2 ‖ n2)`; se no, la richiesta è rifiutata.
 5. Entrambi calcolano `sas = H("thevault/approval/sas/v1" ‖ approvalId ‖ pk2 ‖ pk1 ‖ n1 ‖ n2)` e mostrano
    `codice = uint32_be(sas[0..4]) mod 1 000 000` (6 cifre).
-6. L'utente confronta i codici e preme **Approva** su D1.
+6. L'utente confronta i codici e preme **Approva** su D1 e **Il codice coincide** su D2.
 7. **D1 → S → D2**: `box = crypto_box_easy({"vk", "userId", "approvalId"}, nonce, pk2, sk1)`. D1 cancella `sk1`.
-8. **D2** apre `box` con `(pk1, sk2)`, controlla `userId`, `approvalId` e `keyCheck`, salva VK. S attiva D2 **solo** se
-   l'approvazione arriva da un dispositivo attivo dello stesso utente.
+8. **D2** apre `box` con la `pk1` con cui ha calcolato il codice mostrato (se il server ne indica un'altra, o arriva
+   ad "approvato" senza che D2 abbia mostrato un codice, D2 rifiuta), controlla `userId`, `approvalId` e `keyCheck`
+   (obbligatorio) e salva VK **solo dopo la conferma dell'utente su D2**. S attiva D2 **solo** se l'approvazione arriva
+   da un dispositivo attivo dello stesso utente.
 
 Perché funziona: S deve "impegnarsi" verso D1 su una chiave falsa prima di conoscere `n1`, e scegliere cosa mandare a D2
 prima di conoscere `n2`; quindi non può far coincidere i due codici se non per caso. `pk1` è coperta dal codice, quindi D2
-sa che la chiave arriva davvero da D1 e non da un impostore.
+sa che la chiave arriva davvero da D1 e non da un impostore. La conferma su D2 serve perché un server malintenzionato
+potrebbe anche fingersi D1 da solo, senza coinvolgere l'altro dispositivo: D2 mostrerebbe un codice, ma sull'altro
+dispositivo non comparirebbe nulla da confrontare, e l'utente non confermerebbe.
 
 Limiti: una richiesta aperta per dispositivo, scadenza 10 minuti; dopo 3 rifiuti in un'ora le richieste per
 quell'account si sospendono per un'ora. Ogni nuovo collegamento genera un'email di avviso.
@@ -186,8 +190,10 @@ quell'account si sospendono per un'ora. Ogni nuovo collegamento genera un'email 
 - In chiaro sul disco del server c'è solo `config.json` (`0600`): la chiave dei codici email e la password per le app
   della casella che li invia. Sul Mac mini la protegge FileVault; sul Jetson, che di solito non ha il disco cifrato,
   la guida consiglia una casella dedicata all'invio dei codici.
-- Un dispositivo disconnesso perde subito l'accesso: il suo token viene cancellato e, se è connesso, riceve l'ordine di
-  cancellare i dati locali.
+- Un dispositivo disconnesso perde subito l'accesso: il server cancella il dispositivo, ne ricorda l'impronta del token
+  (per rispondere `401 device_revoked`) e, se è connesso, gli manda l'ordine di cancellare i dati locali. Solo questi
+  due segnali fanno cancellare i dati a un'app: un semplice "token sconosciuto" (`401 unauthorized`, per esempio dopo il ripristino
+  del server da un backup) lascia i dati sul dispositivo, così si possono esportare prima di ricollegarlo.
 
 ## 11. Backup su file (Esporta)
 

@@ -9,6 +9,7 @@ Thumbs.db
 
 # Server build output and local data
 /server/bin/
+/server/build/
 /server/dist/
 /server/.data/
 *.db

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "claude/**"]
+    branches: [main, "claude/**", "fix/**"]
   pull_request:
   workflow_dispatch:
 
@@ -26,8 +26,16 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
+      - name: Go toolchain of go.mod (security fixes)
+        run: |
+          want="$(awk '/^toolchain/ { print $2 }' go.mod)"
+          go version
+          [ "$(go env GOVERSION)" = "$want" ]
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: shellcheck
+        working-directory: .
+        run: shellcheck scripts/*.sh
       - run: go vet ./...
       - run: go test -race -count=1 ./...
       - name: Cross-compile for the Mac mini (darwin/arm64)
@@ -70,6 +78,9 @@ jobs:
           healthy
           "$bin" status | tee "$RUNNER_TEMP/status.txt"
           grep -q "Avvio automatico: ✓" "$RUNNER_TEMP/status.txt"
+          # New terminals find the command (a link in ~/.local/bin, and that folder in the PATH of new shells).
+          [ "$(readlink "$HOME/.local/bin/thevault-server")" = "$data/bin/thevault-server" ]
+          bash -ic 'command -v thevault-server' | grep -q "$HOME/.local/bin/thevault-server"
           # Killed, it comes back by itself (Restart=always).
           pid="$(systemctl --user show -p MainPID --value thevault-server.service)"
           systemctl --user kill --signal=KILL thevault-server.service

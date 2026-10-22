@@ -88,6 +88,18 @@ func TestInstallAndUninstallSystemdUnit(t *testing.T) {
 	if got := calls(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("systemctl calls: %q", got)
 	}
+	// New terminals find the command, also on a desktop where ~/.local/bin did not exist at login.
+	if target, err := os.Readlink(filepath.Join(home, ".local", "bin", "thevault-server")); err != nil || target != BinPath(cfg.DataDir) {
+		t.Errorf("command link: %q %v", target, err)
+	}
+	if err := installSystemdUnit(cfg); err != nil { // upgrade: same link, no second PATH line
+		t.Fatal(err)
+	}
+	rc, _ := os.ReadFile(filepath.Join(home, ".bashrc"))
+	if strings.Count(string(rc), pathMarker) != 1 || !strings.Contains(string(rc), pathLine) {
+		t.Errorf(".bashrc:\n%s", rc)
+	}
+	calls() // the second install's calls are not checked
 
 	if err := uninstallSystemdUnit(cfg.DataDir); err != nil {
 		t.Fatal(err)
@@ -95,7 +107,7 @@ func TestInstallAndUninstallSystemdUnit(t *testing.T) {
 	if _, err := os.Stat(unitPath()); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("unit still there: %v", err)
 	}
-	if got := calls(); got[3] != "--user disable --now "+UnitName {
+	if got := calls(); got[6] != "--user disable --now "+UnitName {
 		t.Errorf("systemctl calls: %q", got)
 	}
 }
@@ -139,9 +151,10 @@ func TestUnitPathFollowsXDG(t *testing.T) {
 }
 
 func TestWizardOnLinux(t *testing.T) {
-	// email, provider (iCloud), sender, backup dir (default)
-	w, out, installed := newTestWizard(t, "me@icloud.com\n\n\n\n", nil)
+	// email, provider (default on Linux: Gmail), a dedicated sender (no default), backup dir (default)
+	w, out, installed := newTestWizard(t, "me@icloud.com\n\ncodici.thevault@gmail.com\n\n", nil)
 	w.OS = "linux"
+	w.ReadPassword = func(string) (string, error) { return " abcd efgh ijkl mnop ", nil } // as Google shows it
 	atBoot := 0
 	w.StartAtBoot = func(w *Wizard) error { atBoot++; return nil }
 	if err := w.Run(); err != nil {
@@ -155,6 +168,10 @@ func TestWizardOnLinux(t *testing.T) {
 	if cfg.Backup.Dir != filepath.Join(home, "thevault-backup") {
 		t.Errorf("backup folder: %s", cfg.Backup.Dir)
 	}
+	if cfg.SMTP.Host != "smtp.gmail.com" || cfg.SMTP.Username != "codici.thevault@gmail.com" ||
+		cfg.SMTP.Password != "abcdefghijklmnop" || cfg.AllowedEmails[0] != "me@icloud.com" {
+		t.Errorf("smtp: %+v", cfg.SMTP)
+	}
 	if *installed != 1 || atBoot != 1 {
 		t.Errorf("installed=%d atBoot=%d", *installed, atBoot)
 	}
@@ -163,14 +180,44 @@ func TestWizardOnLinux(t *testing.T) {
 			t.Errorf("%q in the Linux setup:\n%s", mac, out)
 		}
 	}
-	if !strings.Contains(out.String(), "nuova sessione SSH") {
-		t.Errorf("no hint for the terminal:\n%s", out)
+	if !strings.Contains(out.String(), "nuova sessione SSH") || !strings.Contains(out.String(), "casella creata apposta") {
+		t.Errorf("missing hints:\n%s", out)
+	}
+}
+
+func TestWizardOnLinuxWarnsAboutTheMainMailbox(t *testing.T) {
+	// email, iCloud, sender = the main email → warning, "no", a dedicated one, backup dir
+	w, out, _ := newTestWizard(t, "me@icloud.com\n1\nme@icloud.com\n\nthevault.codici@icloud.com\n\n", nil)
+	w.OS = "linux"
+	w.StartAtBoot = func(w *Wizard) error { return nil }
+	if err := w.Run(); err != nil {
+		t.Fatalf("wizard: %v\n%s", err, out)
+	}
+	cfg, _ := config.Load(w.DataDir)
+	if cfg.SMTP.Username != "thevault.codici@icloud.com" || !strings.Contains(out.String(), "È la tua email principale") {
+		t.Errorf("sender %s:\n%s", cfg.SMTP.Username, out)
+	}
+	// Choosing it anyway is allowed, and not asked again the next time.
+	w2, out2, _ := newTestWizard(t, "\n\nme@icloud.com\ns\n\n", nil)
+	w2.OS, w2.DataDir = "linux", w.DataDir
+	w2.StartAtBoot = func(w *Wizard) error { return nil }
+	if err := w2.Run(); err != nil {
+		t.Fatalf("second run: %v\n%s", err, out2)
+	}
+	w3, out3, _ := newTestWizard(t, "\n\n\n\n", nil)
+	w3.OS, w3.DataDir = "linux", w.DataDir
+	w3.StartAtBoot = func(w *Wizard) error { return nil }
+	if err := w3.Run(); err != nil {
+		t.Fatalf("third run: %v\n%s", err, out3)
+	}
+	if cfg, _ := config.Load(w.DataDir); cfg.SMTP.Username != "me@icloud.com" || strings.Contains(out3.String(), "È la tua email principale") {
+		t.Errorf("sender %s:\n%s", cfg.SMTP.Username, out3)
 	}
 }
 
 func TestWizardOnLinuxAcceptsAnyBackupFolderAndWarnsWithoutLinger(t *testing.T) {
 	// A folder that macOS would refuse is fine on Linux.
-	w, out, _ := newTestWizard(t, "me@icloud.com\n\n\n~/Documents/backup\n", nil)
+	w, out, _ := newTestWizard(t, "me@icloud.com\n\ncodici@gmail.com\n~/Documents/backup\n", nil)
 	w.OS = "linux"
 	w.StartAtBoot = func(w *Wizard) error { return errors.New("permesso non concesso") }
 	if err := w.Run(); err != nil {

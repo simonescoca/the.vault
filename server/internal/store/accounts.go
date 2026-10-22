@@ -203,6 +203,25 @@ func (s *Store) DeleteDevice(ctx context.Context, id string) error {
 	return err
 }
 
+// RevokeDevice deletes a device and remembers its token, so that it is told it was revoked.
+func (s *Store) RevokeDevice(ctx context.Context, id string) error {
+	return s.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO revoked_devices(token_hash, user_id, revoked_at)
+		  SELECT token_hash, user_id, ? FROM devices WHERE id = ?`, NowMillis(), id); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE id = ?`, id)
+		return err
+	})
+}
+
+// IsRevokedToken reports whether a token belonged to a device that was revoked.
+func (s *Store) IsRevokedToken(ctx context.Context, tokenHash []byte) (bool, error) {
+	var n int
+	err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM revoked_devices WHERE token_hash = ?`, tokenHash).Scan(&n)
+	return n > 0, err
+}
+
 // AbandonedDevices deletes devices that never got access (setup/pending) created before the given time,
 // and returns them.
 func (s *Store) AbandonedDevices(ctx context.Context, before int64) ([]*Device, error) {
@@ -257,11 +276,29 @@ func (s *Store) GetOTP(ctx context.Context, email string) (*OTP, error) {
 	return &o, err
 }
 
-// IncOTPAttempts increments the failed attempts counter and returns the new value.
-func (s *Store) IncOTPAttempts(ctx context.Context, email string) (int, error) {
-	var n int
-	err := s.DB.QueryRowContext(ctx, `UPDATE otps SET attempts = attempts + 1 WHERE email = ? RETURNING attempts`, email).Scan(&n)
-	return n, err
+// TakeOTPAttempt uses up one of the attempts of the code sent to email, before it is checked, so that
+// concurrent requests cannot try more codes than allowed. It returns the code with the attempts used so far,
+// or ErrNotFound if there is no valid code with attempts left.
+func (s *Store) TakeOTPAttempt(ctx context.Context, email string, maxAttempts int, now int64) (*OTP, error) {
+	var o OTP
+	err := s.DB.QueryRowContext(ctx, `UPDATE otps SET attempts = attempts + 1
+	  WHERE email = ? AND attempts < ? AND expires_at >= ?
+	  RETURNING email, code_mac, expires_at, attempts, sent_at`, email, maxAttempts, now).
+		Scan(&o.Email, &o.CodeMAC, &o.ExpiresAt, &o.Attempts, &o.SentAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &o, err
+}
+
+// ConsumeOTP deletes the code if it is still the one checked (codeMAC): only one request can use it.
+func (s *Store) ConsumeOTP(ctx context.Context, email string, codeMAC []byte) (bool, error) {
+	res, err := s.DB.ExecContext(ctx, `DELETE FROM otps WHERE email = ? AND code_mac = ?`, email, codeMAC)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 func (s *Store) DeleteOTP(ctx context.Context, email string) error {

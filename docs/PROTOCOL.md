@@ -17,8 +17,8 @@ Technical reference. Security rationale: `SECURITY.md`. Behaviour: `SPEC.md`.
 | Status | Codes (examples) |
 |---|---|
 | 400 | `bad_request`, `invalid_email`, `invalid_field` |
-| 401 | `unauthorized` (missing/unknown/revoked token) |
-| 403 | `forbidden` (wrong device status for this call), `device_revoked` |
+| 401 | `unauthorized` (missing or unknown token: e.g. a server restored from a backup; the app keeps its data), `device_revoked` (token of a revoked device: the app wipes itself; apps up to 1.1.0 wipe on any 401) |
+| 403 | `forbidden` (wrong device status for this call) |
 | 404 | `not_found` |
 | 409 | `conflict` (stale `baseRev`), `already_initialized` |
 | 410 | `otp_expired`, `approval_expired` |
@@ -33,7 +33,8 @@ Technical reference. Security rationale: `SECURITY.md`. Behaviour: `SPEC.md`.
 | `setup` | OTP ok, account has no vault yet | `GET /v1/me`, `POST /v1/vault/init`, `DELETE /v1/devices/self` |
 | `pending` | OTP ok, vault exists, waiting for approval | `GET /v1/me`, approvals (own), recovery, WS (own approval events), `DELETE /v1/devices/self` |
 | `active` | full access | everything except `vault/init` and the pending-only calls |
-| (revoked) | token deleted | nothing → `401` |
+| (revoked) | device deleted, token hash kept in `revoked_devices` | nothing → `401 device_revoked` (also the WS handshake) |
+| (signed out) | device deleted by itself | nothing → `401` |
 
 ## 3. Endpoints
 
@@ -75,7 +76,8 @@ A user record is created on first successful verification of an allowed email.
 - `GET /v1/devices` → `{"devices":[{"id","name","platform","status","createdAt","lastSeenAt","current":bool}]}`
 - `PATCH /v1/devices/self` `{"name":"…"}` → `200`
 - `DELETE /v1/devices/self` → `204` (log out; any status)
-- `DELETE /v1/devices/{id}` → `204` (revoke another device; it receives `device.revoked` if connected)
+- `DELETE /v1/devices/{id}` → `204` (revoke another device; it receives `device.revoked` if connected, and
+  `401 device_revoked` on every later request)
 
 ### 3.5 Approvals
 Pending device (D2):

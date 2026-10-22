@@ -267,6 +267,8 @@ func (w *Wizard) configureMail(cfg *config.Config) error {
 		defChoice = "2"
 	case cfg.SMTP.Host != "" && cfg.SMTP.Host != "smtp.mail.me.com":
 		defChoice = "3"
+	case cfg.SMTP.Host == "" && w.linux():
+		defChoice = "2" // the Linux guide suggests a Gmail mailbox created for this
 	case cfg.SMTP.Host == "" && len(cfg.AllowedEmails) > 0 && strings.HasSuffix(cfg.AllowedEmails[0], "@gmail.com"):
 		defChoice = "2"
 	}
@@ -306,14 +308,37 @@ func (w *Wizard) configureMail(cfg *config.Config) error {
 		}
 		break
 	}
+	mine := cfg.AllowedEmails[0]
 	userDef := cfg.SMTP.Username
-	if userDef == "" {
-		userDef = cfg.AllowedEmails[0]
+	if w.linux() {
+		// Its app password stays written on this computer, whose disk is usually not encrypted.
+		w.say("     Ti consiglio una casella creata apposta per inviare i codici: la sua password per le app resta")
+		w.say("     scritta su questo computer. I codici arriveranno comunque a %s.", mine)
+	} else if userDef == "" {
+		userDef = mine
 	}
+	mainOK := w.linux() && strings.EqualFold(cfg.SMTP.Username, mine) // already chosen in an earlier setup
 	for {
 		user, err := w.ask("     Indirizzo email da cui inviare", userDef)
 		if err != nil {
 			return err
+		}
+		if user == "" {
+			w.say("     ✗ Scrivi l'indirizzo della casella da cui inviare i codici.")
+			continue
+		}
+		if w.linux() && strings.EqualFold(user, mine) && !mainOK {
+			w.say("     ⚠ È la tua email principale: chi prendesse questo computer potrebbe usarne la password per le app")
+			w.say("       per entrare nella tua casella. Meglio una casella dedicata (vedi la guida).")
+			use, err := w.askYesNo("     Vuoi usarla lo stesso?", false)
+			if err != nil {
+				return err
+			}
+			if !use {
+				userDef = ""
+				continue
+			}
+			mainOK = true
 		}
 		cfg.SMTP.Username = user
 		cfg.SMTP.From = "The Vault <" + user + ">"
@@ -324,6 +349,10 @@ func (w *Wizard) configureMail(cfg *config.Config) error {
 		pw, err := w.ReadPassword(prompt + ": ")
 		if err != nil {
 			return err
+		}
+		if cfg.SMTP.Host == "smtp.gmail.com" || cfg.SMTP.Host == "smtp.mail.me.com" {
+			// App passwords have no spaces: Google shows them in groups of four ("abcd efgh ijkl mnop").
+			pw = strings.Join(strings.Fields(pw), "")
 		}
 		if strings.TrimSpace(pw) != "" {
 			cfg.SMTP.Password = strings.TrimSpace(pw)

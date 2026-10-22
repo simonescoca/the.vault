@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/simonescoca/the.vault/server/internal/blobs"
@@ -41,15 +42,39 @@ func Run(ctx context.Context, cfg *config.Config, st *store.Store) (string, erro
 	return run(ctx, cfg, st, time.Now())
 }
 
+// manifest describes a snapshot. BlobIDs lists the attachments it needs ("<userID>/<blobID>"): pruning keeps
+// them in the shared pool as long as the snapshot is kept.
+type manifest struct {
+	CreatedAt    string   `json:"createdAt"`
+	Blobs        int      `json:"blobs"`
+	NewBlobs     int      `json:"newBlobs"`
+	BlobIDs      []string `json:"blobIds"`
+	MissingBlobs []string `json:"missingBlobs,omitempty"`
+}
+
+const tmpPrefix = ".tmp-"
+
 func run(ctx context.Context, cfg *config.Config, st *store.Store, now time.Time) (string, error) {
 	root := Dir(cfg)
-	snap := filepath.Join(root, "snapshots", now.Format(stampLayout))
-	if err := os.MkdirAll(snap, 0o700); err != nil {
+	snapshots := filepath.Join(root, "snapshots")
+	if err := os.MkdirAll(snapshots, 0o700); err != nil {
 		return "", err
 	}
-	dbPath := filepath.Join(snap, "thevault.db")
-	if err := st.Backup(ctx, dbPath); err != nil {
-		os.RemoveAll(snap)
+	// One backup at a time (the server's daily one, 'thevault-server backup', the one before an upgrade):
+	// pruning must not remove what another backup is building.
+	unlock, err := lockDir(root)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	stamp := now.Format(stampLayout)
+	// Built in a temporary folder and renamed at the end: an interrupted backup never looks like a snapshot.
+	tmp, err := os.MkdirTemp(snapshots, tmpPrefix+stamp+"-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmp) // nothing left to remove after the rename
+	if err := st.Backup(ctx, filepath.Join(tmp, "thevault.db")); err != nil {
 		return "", fmt.Errorf("copia del database: %w", err)
 	}
 	ids, err := st.AllCompleteBlobIDs(ctx)
@@ -57,24 +82,43 @@ func run(ctx context.Context, cfg *config.Config, st *store.Store, now time.Time
 		return "", err
 	}
 	files := &blobs.Files{Dir: cfg.DataDir}
-	copied := 0
+	m := manifest{CreatedAt: now.Format(time.RFC3339), Blobs: len(ids), BlobIDs: make([]string, 0, len(ids))}
 	for _, ub := range ids {
-		dst := filepath.Join(root, "blobs", ub[0], ub[1])
-		if _, err := os.Stat(dst); err == nil {
+		src, dst := files.BlobPath(ub[0], ub[1]), filepath.Join(root, "blobs", ub[0], ub[1])
+		in, err := os.Stat(src)
+		if errors.Is(err, os.ErrNotExist) {
+			// Listed in the database but not on disk: one lost attachment must not stop every backup, and the
+			// copy in the backups (now the only one) must stay.
+			m.MissingBlobs = append(m.MissingBlobs, ub[0]+"/"+ub[1])
+			if _, err := os.Stat(dst); err == nil {
+				m.BlobIDs = append(m.BlobIDs, ub[0]+"/"+ub[1])
+			}
 			continue
 		}
-		if err := copyFile(files.BlobPath(ub[0], ub[1]), dst); err != nil {
-			return "", fmt.Errorf("copia allegato %s: %w", ub[1], err)
+		if err != nil {
+			return "", fmt.Errorf("allegato %s: %w", ub[1], err)
 		}
-		copied++
+		if out, err := os.Stat(dst); err != nil || out.Size() != in.Size() {
+			if err := copyFile(src, dst); err != nil {
+				return "", fmt.Errorf("copia allegato %s: %w", ub[1], err)
+			}
+			m.NewBlobs++
+		}
+		m.BlobIDs = append(m.BlobIDs, ub[0]+"/"+ub[1])
 	}
-	manifest, _ := json.MarshalIndent(map[string]any{
-		"createdAt": now.Format(time.RFC3339), "blobs": len(ids), "newBlobs": copied,
-	}, "", "  ")
-	if err := os.WriteFile(filepath.Join(snap, "manifest.json"), manifest, 0o600); err != nil {
+	b, _ := json.MarshalIndent(m, "", "  ")
+	if err := os.WriteFile(filepath.Join(tmp, "manifest.json"), b, 0o600); err != nil {
 		return "", err
 	}
-	if err := prune(root, cfg.Backup.KeepDays, ids, now); err != nil {
+	snap := filepath.Join(snapshots, stamp)
+	if err := os.Rename(tmp, snap); err != nil {
+		if _, serr := os.Stat(filepath.Join(snap, "manifest.json")); serr == nil {
+			return snap, nil // another backup finished in the same second
+		}
+		return "", err
+	}
+	syncDir(snapshots)
+	if err := prune(root, cfg.Backup.KeepDays, now); err != nil {
 		return snap, fmt.Errorf("pulizia vecchi backup: %w", err)
 	}
 	return snap, nil
@@ -99,35 +143,96 @@ func copyFile(src, dst string) error {
 		os.Remove(tmp)
 		return err
 	}
+	if err := out.Sync(); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
 	if err := out.Close(); err != nil {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, dst)
+	if err := os.Rename(tmp, dst); err != nil {
+		return err
+	}
+	syncDir(filepath.Dir(dst))
+	return nil
 }
 
-// prune removes snapshots older than keepDays, and pooled blobs that no longer exist on the server
-// and are older than keepDays (so every kept snapshot still finds its attachments).
-func prune(root string, keepDays int, live [][2]string, now time.Time) error {
+// syncDir makes a rename in dir survive a power cut (best effort).
+func syncDir(dir string) {
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+}
+
+// missingBlobs returns the attachments a snapshot found missing on the server.
+func missingBlobs(snap string) []string {
+	var m manifest
+	if b, err := os.ReadFile(filepath.Join(snap, "manifest.json")); err == nil {
+		_ = json.Unmarshal(b, &m)
+	}
+	return m.MissingBlobs
+}
+
+// manifestBlobIDs returns the attachments listed by a snapshot; ok is false for a snapshot that does not
+// list them (made by an older version, or incomplete).
+func manifestBlobIDs(snap string) (ids []string, ok bool) {
+	b, err := os.ReadFile(filepath.Join(snap, "manifest.json"))
+	if err != nil {
+		return nil, false
+	}
+	var m struct {
+		BlobIDs *[]string `json:"blobIds"`
+	}
+	if json.Unmarshal(b, &m) != nil || m.BlobIDs == nil {
+		return nil, false
+	}
+	return *m.BlobIDs, true
+}
+
+// prune removes the snapshots older than keepDays, unfinished ones left by an interruption, and the pooled
+// attachments that no kept snapshot needs any more.
+func prune(root string, keepDays int, now time.Time) error {
 	cutoff := now.Add(-time.Duration(keepDays) * 24 * time.Hour)
-	entries, err := os.ReadDir(filepath.Join(root, "snapshots"))
+	snapshots := filepath.Join(root, "snapshots")
+	entries, err := os.ReadDir(snapshots)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	needed := map[string]bool{}
+	complete := true
 	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if strings.HasPrefix(e.Name(), tmpPrefix) {
+			// Left by an interrupted backup (pruning runs under the lock: no other backup is in progress).
+			_ = os.RemoveAll(filepath.Join(snapshots, e.Name()))
+			continue
+		}
 		t, err := time.ParseInLocation(stampLayout, e.Name(), now.Location())
-		if err != nil || !e.IsDir() {
+		if err != nil {
 			continue
 		}
 		if t.Before(cutoff) {
-			if err := os.RemoveAll(filepath.Join(root, "snapshots", e.Name())); err != nil {
+			if err := os.RemoveAll(filepath.Join(snapshots, e.Name())); err != nil {
 				return err
 			}
+			continue
+		}
+		ids, ok := manifestBlobIDs(filepath.Join(snapshots, e.Name()))
+		if !ok {
+			complete = false
+		}
+		for _, id := range ids {
+			needed[id] = true
 		}
 	}
-	isLive := map[string]bool{}
-	for _, ub := range live {
-		isLive[ub[0]+"/"+ub[1]] = true
+	if !complete {
+		// A kept snapshot does not say which attachments it needs: keep them all until it is pruned.
+		return nil
 	}
 	users, err := os.ReadDir(filepath.Join(root, "blobs"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -139,12 +244,8 @@ func prune(root string, keepDays int, live [][2]string, now time.Time) error {
 			continue
 		}
 		for _, f := range files {
-			if isLive[u.Name()+"/"+f.Name()] {
-				continue
-			}
-			info, err := f.Info()
-			if err == nil && info.ModTime().Before(cutoff) {
-				os.Remove(filepath.Join(root, "blobs", u.Name(), f.Name()))
+			if !needed[u.Name()+"/"+f.Name()] && !strings.HasSuffix(f.Name(), ".tmp") {
+				_ = os.Remove(filepath.Join(root, "blobs", u.Name(), f.Name()))
 			}
 		}
 	}
@@ -173,6 +274,8 @@ type Status struct {
 	LastSuccess int64  `json:"lastSuccess,omitempty"`
 	LastDir     string `json:"lastDir,omitempty"`
 	LastError   string `json:"lastError,omitempty"` // empty when the latest attempt worked
+	// MissingBlobs counts the attachments the database lists but the server no longer has (latest backup).
+	MissingBlobs int `json:"missingBlobs,omitempty"`
 }
 
 func statusPath(cfg *config.Config) string { return filepath.Join(cfg.DataDir, "backup-status.json") }
@@ -195,6 +298,7 @@ func RunAndRecord(ctx context.Context, cfg *config.Config, st *store.Store) (str
 		s.LastError = err.Error()
 	} else {
 		s.LastSuccess, s.LastDir, s.LastError = s.LastAttempt, dir, ""
+		s.MissingBlobs = len(missingBlobs(dir))
 	}
 	if b, jerr := json.Marshal(s); jerr == nil {
 		_ = os.WriteFile(statusPath(cfg), b, 0o600)
@@ -202,39 +306,91 @@ func RunAndRecord(ctx context.Context, cfg *config.Config, st *store.Store) (str
 	return dir, err
 }
 
-// RunDaily makes a backup every day at cfg.Backup.Hour (local time). If the latest snapshot is older
-// than a day (e.g. the Mac was off at backup time, or this is the first start) it makes one shortly after start.
+// RunDaily makes a backup every day at cfg.Backup.Hour:30 (local time), and soon after the start if the
+// latest one was missed (e.g. the computer was off at backup time). It waits for a clock it can trust: after
+// a power cut an NVIDIA Jetson starts in 1970 until the network time arrives.
 func RunDaily(ctx context.Context, cfg *config.Config, st *store.Store, log *slog.Logger) {
-	first := nextRun(time.Now(), cfg.Backup.Hour)
-	if snaps, err := Snapshots(cfg); err != nil || len(snaps) == 0 || stale(snaps[0], time.Now()) {
-		first = time.Now().Add(30 * time.Second)
-	}
-	timer := time.NewTimer(time.Until(first))
+	started := time.Now()
+	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
+	var retryAt time.Time
+	waiting := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
 		}
+		timer.Reset(time.Minute)
+		now := time.Now()
+		if !ClockTrusted(now, time.Since(started)) {
+			if !waiting {
+				log.Info("backup: waiting for the clock to be synchronized", "now", now.Format(time.RFC3339))
+				waiting = true
+			}
+			continue
+		}
+		waiting = false
+		if now.Before(retryAt) || !due(now, latestSnapshot(cfg, now), cfg.Backup.Hour) {
+			continue
+		}
 		if dir, err := RunAndRecord(ctx, cfg, st); err != nil {
 			log.Error("backup failed", "dir", Dir(cfg), "error", err)
+			retryAt = now.Add(time.Hour)
 		} else {
 			log.Info("backup done", "dir", dir)
+			if missing := missingBlobs(dir); len(missing) > 0 {
+				log.Warn("attachments missing on the server (the copies in the backups are kept)", "blobs", missing)
+			}
 		}
-		timer.Reset(time.Until(nextRun(time.Now(), cfg.Backup.Hour)))
 	}
 }
 
-func stale(name string, now time.Time) bool {
-	t, err := time.ParseInLocation(stampLayout, name, now.Location())
-	return err != nil || now.Sub(t) > 25*time.Hour
+// minTrustedTime is earlier than any real date this program can run at: a clock before it was reset.
+var minTrustedTime = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// timesyncDir is where systemd-timesyncd marks a synchronized clock (Linux).
+var timesyncDir = "/run/systemd/timesync"
+
+// ClockTrusted reports whether the wall clock can name and schedule backups: not reset to 1970, and, where
+// systemd-timesyncd is used, synchronized with the network (or up for a while: the network may be missing).
+func ClockTrusted(now time.Time, up time.Duration) bool {
+	if now.Before(minTrustedTime) {
+		return false
+	}
+	if _, err := os.Stat(timesyncDir); err != nil {
+		return true // no timesyncd (macOS, or another time service)
+	}
+	if _, err := os.Stat(filepath.Join(timesyncDir, "synchronized")); err == nil {
+		return true
+	}
+	return up > 15*time.Minute
 }
 
-func nextRun(now time.Time, hour int) time.Time {
-	next := time.Date(now.Year(), now.Month(), now.Day(), hour, 30, 0, 0, now.Location())
-	if !next.After(now) {
-		next = next.Add(24 * time.Hour)
+// lastSlot is the latest scheduled backup time (hour:30) at or before now.
+func lastSlot(now time.Time, hour int) time.Time {
+	t := time.Date(now.Year(), now.Month(), now.Day(), hour, 30, 0, 0, now.Location())
+	if t.After(now) {
+		t = time.Date(now.Year(), now.Month(), now.Day()-1, hour, 30, 0, 0, now.Location())
 	}
-	return next
+	return t
+}
+
+// due reports whether a backup is needed at now: none yet, or the latest is older than the last slot.
+func due(now, latest time.Time, hour int) bool {
+	return latest.IsZero() || latest.Before(lastSlot(now, hour))
+}
+
+// latestSnapshot returns the time of the newest snapshot, ignoring any dated in the future (made while the
+// clock was wrong); zero if there is none.
+func latestSnapshot(cfg *config.Config, now time.Time) time.Time {
+	names, _ := Snapshots(cfg)
+	var latest time.Time
+	for _, n := range names {
+		t, err := time.ParseInLocation(stampLayout, n, now.Location())
+		if err == nil && !t.After(now.Add(time.Hour)) && t.After(latest) {
+			latest = t
+		}
+	}
+	return latest
 }

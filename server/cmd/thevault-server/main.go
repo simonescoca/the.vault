@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -55,6 +56,11 @@ func main() {
 	case "backup":
 		err = runBackup(*dataDir)
 	case "uninstall":
+		if runtime.GOOS == "linux" && os.Geteuid() == 0 {
+			// As root it would look for the service of root, and leave the real one running.
+			err = errors.New("esegui il comando con il tuo utente, senza sudo")
+			break
+		}
 		err = setup.Uninstall(*dataDir)
 	case "upgrade":
 		err = upgrade(*dataDir)
@@ -161,9 +167,14 @@ func upgrade(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Backup di sicurezza prima dell'aggiornamento…")
-	if err := runBackup(dataDir); err != nil {
-		return fmt.Errorf("backup non riuscito, aggiornamento annullato: %w", err)
+	// Made before installing anything: runBackup copies the database as it is, without migrating it.
+	if _, err := os.Stat(filepath.Join(dataDir, "thevault.db")); err == nil {
+		fmt.Println("Backup di sicurezza prima dell'aggiornamento…")
+		if err := runBackup(dataDir); err != nil {
+			return fmt.Errorf("backup non riuscito, aggiornamento annullato: %w", err)
+		}
+	} else {
+		fmt.Println("Ancora nessun dato sul server: niente backup prima dell'aggiornamento.")
 	}
 	fmt.Printf("Installo la versione %s…\n", version)
 	if err := setup.Upgrade(cfg, version); err != nil {
@@ -178,7 +189,9 @@ func runBackup(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	st, err := store.Open(filepath.Join(dataDir, "thevault.db"))
+	// A backup copies the database as it is: the schema is migrated only by the server that will use it
+	// (before an upgrade this is the new program, and the old server is still running).
+	st, err := store.OpenNoMigrate(filepath.Join(dataDir, "thevault.db"))
 	if err != nil {
 		return err
 	}
@@ -188,5 +201,9 @@ func runBackup(dataDir string) error {
 		return err
 	}
 	fmt.Println("Backup completato:", dir)
+	if n := backup.ReadStatus(cfg).MissingBlobs; n > 0 {
+		fmt.Printf("⚠ Sul server mancano %d allegati: le loro copie nei backup restano (elenco in %s).\n", n,
+			filepath.Join(dir, "manifest.json"))
+	}
 	return nil
 }

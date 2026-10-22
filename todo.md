@@ -177,6 +177,19 @@ Dopo **ogni** task eseguo la batteria di test di tutto il progetto, non solo del
 - [x] **T9.5** Guida passo passo → [`docs/guida-server-jetson.md`](docs/guida-server-jetson.md)
 - [x] **T9.6** Nuova versione pubblicata con i file per Linux → [versione 1.1.0](https://github.com/simonescoca/the.vault/releases/latest)
 
+### Fase 10 — Primo collaudo sul Jetson vero (Orin Nano 8 GB, JetPack 7)
+- [x] **T10.1** Studio completo del progetto e della guida sul Jetson vero → rapporto con 81 punti, i più importanti
+  ricontrollati a mano
+- [x] **T10.2** Jetson pronto: Go 1.26.10, Tailscale, Flutter 3.47.6 (per i test)
+- [x] **T10.3** Installazione su Linux: comando `thevault-server` anche nei nuovi terminali, controllo del terminale,
+  casella dedicata per i codici, verifica vera di Funnel, avviso sulla scadenza della chiave Tailscale
+- [x] **T10.4** Backup: orologio al 1970 dopo un'interruzione di corrente, cambio dell'ora legale, pulizia che non
+  cancella più allegati ancora necessari, allegato mancante che non blocca più i backup
+- [x] **T10.5** Bug: cancellazione dei dati su ogni 401, chiave scelta dal server nell'approvazione, aggiornamento senza
+  ritorno, Go 1.26.0, errore 502 scambiato per "non è un server The Vault", tentativi del codice non atomici,
+  scritture perse in caso di blackout
+- [ ] **T10.6** Nuova versione pubblicata e installata sul Jetson
+
 ---
 
 ## 3. Fasi future (dopo il desktop)

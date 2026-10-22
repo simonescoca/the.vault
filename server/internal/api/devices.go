@@ -84,7 +84,7 @@ func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.closeApprovalsOf(r, target)
-	if err := s.Store.DeleteDevice(r.Context(), id); err != nil {
+	if err := s.Store.RevokeDevice(r.Context(), id); err != nil {
 		s.internal(w, err)
 		return
 	}

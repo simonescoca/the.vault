@@ -40,7 +40,9 @@ Sequenza a schermo intero, centrata, essenziale. In ogni passo c'è "Indietro" q
    - **5B — Account esistente** (nuovo dispositivo): schermata **Conferma questo dispositivo**:
      "Apri The Vault su un dispositivo già collegato: ti chiederà di approvare questo accesso." Poi, appena l'altro
      dispositivo risponde, compare il **codice di verifica** (6 cifre, es. `482 917`) con la scritta "Controlla che
-     sull'altro dispositivo compaia lo stesso codice, poi approva da lì". Quando arriva l'approvazione si prosegue da soli.
+     sull'altro dispositivo compaia lo stesso codice, approva da lì e poi conferma qui" e i pulsanti **Il codice
+     coincide** / **Non coincide**. Si prosegue quando ci sono sia l'approvazione dell'altro dispositivo sia la conferma
+     qui (in qualunque ordine); **Non coincide** annulla la richiesta.
      Link in basso: **Non ho altri dispositivi** → inserimento del **codice di emergenza** → si prosegue.
      Se l'altro dispositivo rifiuta: "Accesso rifiutato" e si torna all'inizio.
 6. **PIN** — "Scegli un PIN di 6 cifre", poi "Ripeti il PIN". Serve quando la biometria non è disponibile.

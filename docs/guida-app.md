@@ -29,7 +29,7 @@ Le ultime versioni sono sempre qui: **[github.com/simonescoca/the.vault/releases
 ## 2. Il primo computer
 
 1. **Inizia**.
-2. **Il tuo server**: scrivi l'indirizzo del Mac mini (es. `mac-mini.tail1234.ts.net`).
+2. **Il tuo server**: scrivi l'indirizzo del server (es. `mac-mini.tail1234.ts.net` o `jetson-orin.tail1234.ts.net`).
 3. **La tua email** › **Invia codice**.
 4. **Controlla la posta**: scrivi il codice di 6 cifre arrivato via email (puoi anche incollarlo).
 5. **Il tuo codice di emergenza** — il passo più importante:
@@ -46,8 +46,10 @@ Fatto: la tua cassaforte è pronta.
 1. Installa l'app e ripeti i passi 2.1 – 2.4 (stesso server, stessa email).
 2. Compare **Conferma questo dispositivo** con un **codice di verifica**.
 3. Sul computer che usi già, The Vault mostra **Nuovo accesso**: «PC di casa» vuole accedere.
-4. **Controlla che il codice sia lo stesso sui due schermi**, poi premi **Approva**.
-   Se i codici sono diversi premi **Rifiuta**: qualcuno potrebbe tentare di intromettersi.
+4. **Controlla che il codice sia lo stesso sui due schermi**, poi premi **Approva** sul computer che usi già e
+   **Il codice coincide** su quello nuovo (l'ordine non conta).
+   Se i codici sono diversi premi **Rifiuta** da una parte e **Non coincide** dall'altra: qualcuno potrebbe tentare di
+   intromettersi.
 5. Scegli il PIN del nuovo computer. Le password compaiono subito, e da qui in poi ogni modifica arriva in tempo reale.
 
 > **Non hai un altro dispositivo a portata di mano?** Nella schermata di conferma scegli **Non ho altri dispositivi** e
@@ -114,7 +116,8 @@ Applicazioni e scegli **Sostituisci**; Windows: apri il nuovo installer). Le pas
 
 | Problema | Soluzione |
 |---|---|
-| «Server non raggiungibile» | Controlla l'indirizzo e che il Mac mini sia acceso (guida del server, «Se qualcosa non va»). |
+| «Server non raggiungibile» | Controlla l'indirizzo e che il server (Mac mini o Jetson) sia acceso (guida del server, «Se qualcosa non va»). |
+| «Il server non riconosce più questo dispositivo…» | I dati sono ancora su questo computer: esportali (**Impostazioni › Backup › Esporta…**), poi **Esci da questo dispositivo** e ricollegalo. Succede se i dati del server sono stati cancellati o ripristinati da un backup. |
 | Il codice email non arriva | Guarda nello Spam; puoi chiedere **Invia un nuovo codice** dopo 30 secondi. |
 | PIN dimenticato | Dopo 10 tentativi sbagliati il computer si scollega da solo per sicurezza (le password restano al sicuro): ricollegalo come al punto 3. |
 | Sono offline | Puoi consultare e modificare tutto: le modifiche partono appena torna la connessione. In basso a sinistra vedi lo stato. |

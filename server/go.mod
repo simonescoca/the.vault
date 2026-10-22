@@ -2,6 +2,9 @@ module github.com/simonescoca/the.vault/server
 
 go 1.26.0
 
+// The releases are built with the latest Go 1.26 patch release (security fixes in net/http and friends).
+toolchain go1.26.10
+
 require (
 	github.com/coder/websocket v1.8.15
 	golang.org/x/term v0.46.0

@@ -26,7 +26,18 @@ type Store struct {
 }
 
 // Open opens (and migrates) the database at path. Use ":memory:" only in tests with a single connection.
-func Open(path string) (*Store, error) {
+func Open(path string) (*Store, error) { return open(path, true) }
+
+// OpenNoMigrate opens an existing database as it is, without migrating it: for backups, which must copy
+// the data in the schema it has (for example before an upgrade, with the new program).
+func OpenNoMigrate(path string) (*Store, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	return open(path, false)
+}
+
+func open(path string, migrate bool) (*Store, error) {
 	if path != ":memory:" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return nil, err
@@ -36,7 +47,9 @@ func Open(path string) (*Store, error) {
 	q.Add("_pragma", "journal_mode(WAL)")
 	q.Add("_pragma", "busy_timeout(10000)")
 	q.Add("_pragma", "foreign_keys(1)")
-	q.Add("_pragma", "synchronous(NORMAL)")
+	// FULL: a write the server has confirmed survives a power cut (with NORMAL the last ones could be lost,
+	// and their revision numbers given again to other writes).
+	q.Add("_pragma", "synchronous(FULL)")
 	q.Set("_txlock", "immediate")
 	dsn := "file:" + path + "?" + q.Encode()
 	db, err := sql.Open("sqlite", dsn)
@@ -49,9 +62,11 @@ func Open(path string) (*Store, error) {
 		db.SetMaxOpenConns(8)
 	}
 	s := &Store{DB: db, path: path}
-	if err := s.migrate(context.Background()); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrazione database: %w", err)
+	if migrate {
+		if err := s.migrate(context.Background()); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("migrazione database: %w", err)
+		}
 	}
 	if path != ":memory:" {
 		_ = os.Chmod(path, 0o600)
@@ -172,40 +187,60 @@ CREATE TABLE recovery_attempts (
 );
 CREATE INDEX recovery_attempts_user ON recovery_attempts(user_id, at);
 `,
+	// 2: tokens of revoked devices, so that the server can tell "revoked" (the app forgets everything)
+	// from "unknown" (for example after a restore: the app keeps its data)
+	`
+CREATE TABLE revoked_devices (
+  token_hash BLOB PRIMARY KEY,
+  user_id    TEXT NOT NULL,
+  revoked_at INTEGER NOT NULL
+);
+`,
 }
+
+// ErrNewerSchema means the database was written by a newer version of the server.
+var ErrNewerSchema = errors.New("il database è di una versione più recente di questo programma: installa l'ultima versione")
 
 func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.DB.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`); err != nil {
 		return err
 	}
+	// One migration per transaction; the version is read inside it, so two processes cannot apply the same one.
+	for {
+		done := false
+		err := s.Tx(ctx, func(tx *sql.Tx) error {
+			var v int
+			err := tx.QueryRowContext(ctx, `SELECT version FROM schema_version`).Scan(&v)
+			if errors.Is(err, sql.ErrNoRows) {
+				_, err = tx.ExecContext(ctx, `INSERT INTO schema_version(version) VALUES (0)`)
+			}
+			if err != nil {
+				return err
+			}
+			switch {
+			case v > len(migrations):
+				return fmt.Errorf("%w (schema %d, questo programma arriva a %d)", ErrNewerSchema, v, len(migrations))
+			case v == len(migrations):
+				done = true
+				return nil
+			}
+			if _, err := tx.ExecContext(ctx, migrations[v]); err != nil {
+				return fmt.Errorf("migration %d: %w", v+1, err)
+			}
+			_, err = tx.ExecContext(ctx, `UPDATE schema_version SET version = ?`, v+1)
+			return err
+		})
+		if err != nil || done {
+			return err
+		}
+	}
+}
+
+// SchemaVersion returns the version of the database schema.
+func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
 	var v int
 	err := s.DB.QueryRowContext(ctx, `SELECT version FROM schema_version`).Scan(&v)
-	if errors.Is(err, sql.ErrNoRows) {
-		if _, err := s.DB.ExecContext(ctx, `INSERT INTO schema_version(version) VALUES (0)`); err != nil {
-			return err
-		}
-		v = 0
-	} else if err != nil {
-		return err
-	}
-	for i := v; i < len(migrations); i++ {
-		tx, err := s.DB.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, migrations[i]); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("migration %d: %w", i+1, err)
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE schema_version SET version = ?`, i+1); err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return v, err
 }
 
 // Tx runs fn inside an IMMEDIATE transaction.

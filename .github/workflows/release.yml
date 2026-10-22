@@ -94,6 +94,8 @@ jobs:
               mkdir -p "build/$os-$arch"
               GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
                 -o "build/$os-$arch/thevault-server" ./cmd/thevault-server
+              # Built with the Go release named in go.mod (toolchain), not an older one.
+              go version "build/$os-$arch/thevault-server" | grep -q ": $(awk '/^toolchain/ { print $2 }' go.mod)\$"
               tar -C "build/$os-$arch" -czf "dist/thevault-server-$name-$arch.tar.gz" thevault-server
             done
           done
@@ -103,6 +105,50 @@ jobs:
           name: server
           path: server/dist/*
           if-no-files-found: error
+
+  server-arm64:
+    name: Server — the published Linux ARM64 file runs (Jetson)
+    needs: [version, server]
+    runs-on: ubuntu-24.04-arm
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: server
+          path: dist
+      - name: Version, systemd user service (install, status, restart after a crash, uninstall)
+        run: |
+          tar -xzf dist/thevault-server-linux-arm64.tar.gz -C "$RUNNER_TEMP"
+          bin="$RUNNER_TEMP/thevault-server"
+          [ "$("$bin" version)" = "thevault-server $VERSION" ]
+          sudo loginctl enable-linger "$USER"
+          XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export XDG_RUNTIME_DIR
+          for _ in $(seq 50); do [ -S "$XDG_RUNTIME_DIR/bus" ] && break; sleep 0.2; done
+          data="$HOME/.thevault-server"
+          mkdir -p "$data"
+          secret="$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')"
+          printf '{"listen":"127.0.0.1:8743","allowedEmails":["me@example.com"],"serverSecret":"%s","mailMode":"log"}\n' \
+            "$secret" >"$data/config.json"
+          healthy() {
+            for _ in $(seq 60); do curl -fsS http://127.0.0.1:8743/v1/health && return 0; sleep 0.5; done
+            cat "$data/server.log"
+            return 1
+          }
+          "$bin" upgrade
+          systemctl --user is-active thevault-server.service
+          healthy | grep -q "\"version\":\"$VERSION\""
+          "$bin" status | tee "$RUNNER_TEMP/status.txt"
+          grep -q "Avvio automatico: ✓" "$RUNNER_TEMP/status.txt"
+          [ "$(readlink "$HOME/.local/bin/thevault-server")" = "$data/bin/thevault-server" ]
+          pid="$(systemctl --user show -p MainPID --value thevault-server.service)"
+          systemctl --user kill --signal=KILL thevault-server.service
+          sleep 1
+          healthy
+          [ "$(systemctl --user show -p MainPID --value thevault-server.service)" != "$pid" ]
+          "$bin" uninstall
+          if systemctl --user is-active thevault-server.service; then exit 1; fi
 
   macos:
     name: App (macOS)
@@ -190,7 +236,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [version, server, macos, windows]
+    needs: [version, server, server-arm64, macos, windows]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}

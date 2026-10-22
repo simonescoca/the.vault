@@ -82,7 +82,7 @@ senza toccare il router. Per uso personale è gratuito.
 
    **Scrivilo**: lo inserirai nell'app (vedi la [guida dell'app](guida-app.md)).
 
-> Se il certificato HTTPS non è ancora pronto, il passo 5 dice «non ancora raggiungibile»: è normale nei primi minuti.
+> Se il certificato HTTPS non è ancora pronto, il passo 5 dice «non risponde ancora»: è normale nei primi minuti.
 > Controlla più tardi con il comando del punto 5.
 
 ## 5. Controllare che tutto funzioni
@@ -101,7 +101,8 @@ The Vault — stato del server
   Email ammessa:    mario.rossi@icloud.com
   Invio email:      smtp.mail.me.com
   Server locale:    ✓ attivo su http://127.0.0.1:8743
-  Fuori casa:       ✓ https://mac-mini.tail1234.ts.net
+  Tailscale:        ✓ collegato (mac-mini.tail1234.ts.net), chiave senza scadenza
+  Fuori casa:       ✓ https://mac-mini.tail1234.ts.net (prova da un telefono con i dati mobili)
   Indirizzo per l'app: mac-mini.tail1234.ts.net
   Backup:           ✓ ultimo riuscito il 02/10/2026 03:30 in /Users/mario/The Vault Backup
 ```
@@ -147,7 +148,8 @@ Le risposte già date sono proposte tra parentesi: cambia solo quello che ti ser
 | L'app dice «Server non raggiungibile» | Il Mac mini è acceso e collegato? Tailscale è aperto e collegato? Controlla con `thevault-server status`. |
 | Dopo un riavvio non funziona più | Fai l'accesso sul Mac mini (vedi 1. «Dopo un riavvio»). |
 | `thevault-server: command not found` | Apri una **nuova** finestra del Terminale (quella vecchia non conosce ancora il comando). |
-| Backup «non riuscito» in `status` | Esegui `thevault-server setup` e al passo 3 premi Invio per la cartella proposta. |
+| `status` dice «Tailscale: ⚠ la chiave … scade il …» | Su [login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines), accanto al Mac mini premi **⋯** › **Disable key expiry**: altrimenti da quel giorno The Vault non è raggiungibile da fuori casa. |
+| Backup «non è riuscito» in `status` | Esegui `thevault-server setup` e al passo 3 premi Invio per la cartella proposta. |
 
 ## Togliere il server
 

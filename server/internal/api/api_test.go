@@ -639,8 +639,21 @@ func TestRevokeAndSignOut(t *testing.T) {
 		t.Fatal("revoked device socket not closed")
 	}
 	ws1.wait("devices.changed")
-	if code, _ := d2.req("GET", "/v1/me", nil); code != 401 {
-		t.Fatalf("revoked token must be rejected: %d", code)
+	// A revoked device is told so (it forgets its data); an unknown token only gets "unauthorized" (it keeps
+	// them). Both are 401: older apps wipe themselves on any 401.
+	if code, out := d2.req("GET", "/v1/me", nil); code != 401 || errCode(out) != "device_revoked" {
+		t.Fatalf("revoked token must get 401 device_revoked: %d %v", code, out)
+	}
+	url := "ws" + strings.TrimPrefix(e.ts.URL, "http") + "/v1/ws"
+	_, resp, err := websocket.Dial(context.Background(), url, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + d2.token}},
+	})
+	if err == nil || resp == nil || resp.StatusCode != 401 {
+		t.Fatalf("revoked token must not open the WebSocket: %v %v", err, resp)
+	}
+	unknown := &client{e: e, token: enc(rnd(32))}
+	if code, out := unknown.req("GET", "/v1/me", nil); code != 401 || errCode(out) != "unauthorized" {
+		t.Fatalf("unknown token must get 401: %d %v", code, out)
 	}
 	d1.must(200, "PATCH", "/v1/devices/self", map[string]any{"name": "Mac mini di Simone"})
 	devs := d1.must(200, "GET", "/v1/devices", nil)["devices"].([]any)
@@ -651,4 +664,69 @@ func TestRevokeAndSignOut(t *testing.T) {
 	if code, _ := d1.req("GET", "/v1/me", nil); code != 401 {
 		t.Fatalf("signed-out token must be rejected: %d", code)
 	}
+}
+
+func TestOTPAttemptsAreAtomic(t *testing.T) {
+	e := newEnv(t)
+	a := e.anon()
+	a.must(202, "POST", "/v1/auth/otp/request", map[string]any{"email": testEmail, "locale": "it"})
+	code := e.lastCode()
+	wrong := fmt.Sprintf("%06d", (mustAtoi(t, code)+1)%1000000)
+	verify := func(c string) (int, map[string]any) {
+		return a.req("POST", "/v1/auth/otp/verify", map[string]any{"email": testEmail, "code": c,
+			"device": map[string]any{"name": "PC", "platform": "windows", "publicKey": enc(rnd(32))}})
+	}
+	// 20 wrong codes at the same time: only 5 are actually checked, the others find no attempts left.
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	checked := 0
+	for range 20 {
+		wg.Go(func() {
+			status, out := verify(wrong)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case status == 422 && errCode(out) == "otp_invalid":
+				checked++
+			case status == 410:
+			default:
+				t.Errorf("unexpected answer %d %v", status, out)
+			}
+		})
+	}
+	wg.Wait()
+	if checked != otpMaxAttempts {
+		t.Fatalf("%d codes checked, want %d", checked, otpMaxAttempts)
+	}
+	if status, _ := verify(code); status != 410 {
+		t.Fatalf("the right code after the attempts ran out: %d, want 410", status)
+	}
+
+	// The right code sent twice at the same time creates only one device.
+	e.srv.Store.PutOTP(context.Background(), store.OTP{Email: testEmail, CodeMAC: []byte("x"), ExpiresAt: 1, SentAt: 0})
+	a.must(202, "POST", "/v1/auth/otp/request", map[string]any{"email": testEmail, "locale": "it"})
+	code = e.lastCode()
+	ok := 0
+	for range 2 {
+		wg.Go(func() {
+			if status, _ := verify(code); status == 200 {
+				mu.Lock()
+				ok++
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if ok != 1 {
+		t.Fatalf("%d devices created with one code, want 1", ok)
+	}
+}
+
+func mustAtoi(t *testing.T, s string) int {
+	t.Helper()
+	var n int
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

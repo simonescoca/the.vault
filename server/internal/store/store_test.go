@@ -215,3 +215,89 @@ func TestApprovalTransitions(t *testing.T) {
 		t.Fatalf("want b2 expired, got %v %v", expired, err)
 	}
 }
+
+func TestRefusesNewerSchemaAndOpensWithoutMigrating(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "db.sqlite")
+	if _, err := OpenNoMigrate(path); err == nil {
+		t.Fatal("OpenNoMigrate must not create a database")
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// As if written by version 1.1.0 (schema 1): opening it for a backup leaves it as it is.
+	if _, err := s.DB.ExecContext(ctx, `DROP TABLE revoked_devices; UPDATE schema_version SET version = 1`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = OpenNoMigrate(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := s.SchemaVersion(ctx); v != 1 {
+		t.Fatalf("schema %d after OpenNoMigrate, want 1", v)
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := s.SchemaVersion(ctx); v != len(migrations) {
+		t.Fatalf("schema %d after Open, want %d", v, len(migrations))
+	}
+	// Written by a newer server: an older one must not use it.
+	s.DB.ExecContext(ctx, `UPDATE schema_version SET version = 99`)
+	s.Close()
+	if _, err := Open(path); !errors.Is(err, ErrNewerSchema) {
+		t.Fatalf("newer schema: %v", err)
+	}
+}
+
+func TestRevokedTokensAreRemembered(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	_, d := setupUserDevice(t, s, StatusActive)
+	if err := s.RevokeDevice(ctx, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeviceByTokenHash(ctx, []byte("hash-active")); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked device still there: %v", err)
+	}
+	if ok, err := s.IsRevokedToken(ctx, []byte("hash-active")); err != nil || !ok {
+		t.Fatalf("revoked token not remembered: %v %v", ok, err)
+	}
+	if ok, _ := s.IsRevokedToken(ctx, []byte("other")); ok {
+		t.Fatal("unknown token reported as revoked")
+	}
+}
+
+func TestOTPAttemptsAndSingleUse(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	if err := s.PutOTP(ctx, OTP{Email: "a@b.it", CodeMAC: []byte("mac"), ExpiresAt: 1000, SentAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 3; i++ {
+		o, err := s.TakeOTPAttempt(ctx, "a@b.it", 3, 500)
+		if err != nil || o.Attempts != i {
+			t.Fatalf("attempt %d: %v %v", i, o, err)
+		}
+	}
+	if _, err := s.TakeOTPAttempt(ctx, "a@b.it", 3, 500); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("no attempts left: %v", err)
+	}
+	s.PutOTP(ctx, OTP{Email: "a@b.it", CodeMAC: []byte("mac2"), ExpiresAt: 1000, SentAt: 2})
+	if _, err := s.TakeOTPAttempt(ctx, "a@b.it", 3, 1001); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired code: %v", err)
+	}
+	if ok, _ := s.ConsumeOTP(ctx, "a@b.it", []byte("mac")); ok {
+		t.Fatal("an older code must not be consumed")
+	}
+	if ok, _ := s.ConsumeOTP(ctx, "a@b.it", []byte("mac2")); !ok {
+		t.Fatal("code not consumed")
+	}
+	if ok, _ := s.ConsumeOTP(ctx, "a@b.it", []byte("mac2")); ok {
+		t.Fatal("code consumed twice")
+	}
+}

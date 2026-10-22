@@ -2,6 +2,7 @@ package setup
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -16,7 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/simonescoca/the.vault/server/internal/backup"
 	"github.com/simonescoca/the.vault/server/internal/config"
+	"github.com/simonescoca/the.vault/server/internal/store"
 )
 
 // The macOS background service: a LaunchAgent, started when the user logs in and kept alive by launchd.
@@ -190,23 +193,102 @@ func WaitHealthy(cfg *config.Config) error {
 	return last
 }
 
+// upgradeWait is how long Upgrade waits for the new version to answer.
+var upgradeWait = 30 * time.Second
+
 // Upgrade replaces the installed program with this one and restarts the service; data and settings stay.
-// It returns once the new version answers.
+// It returns once the new version answers. If it does not, the previous program is put back and restarted.
 func Upgrade(cfg *config.Config, version string) error {
-	if err := InstallService(cfg); err != nil {
+	dataDir, err := filepath.Abs(cfg.DataDir)
+	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(30 * time.Second)
+	bin := BinPath(dataDir)
+	prev := bin + ".prev"
+	before := schemaVersion(dataDir)
+	kept := keepPrevious(bin, prev)
+	err = InstallService(cfg)
+	if err == nil {
+		err = waitVersion(cfg, func(v string) bool { return v == version }, upgradeWait)
+	}
+	if err == nil || !kept {
+		return err
+	}
+	if schemaVersion(dataDir) > max(before, 0) {
+		// The new version already updated the database: the previous one could not use it.
+		return fmt.Errorf("%w. La nuova versione ha già aggiornato il database, quindi resta installata: guarda il "+
+			"registro (%s). Il backup fatto prima dell'aggiornamento è in %s", err, LogPath(cfg.DataDir), backup.Dir(cfg))
+	}
+	if rerr := os.Rename(prev, bin); rerr != nil {
+		return fmt.Errorf("%w. Non sono riuscito a rimettere la versione precedente: %v", err, rerr)
+	}
+	restartService()
+	if werr := waitVersion(cfg, func(string) bool { return true }, upgradeWait); werr != nil {
+		return fmt.Errorf("%w. Ho rimesso la versione precedente, ma non risponde (registro: %s)", err, LogPath(cfg.DataDir))
+	}
+	v, _ := runningVersion(localURL(cfg))
+	return fmt.Errorf("%w. Ho rimesso la versione precedente (%s), che è di nuovo attiva", err, v)
+}
+
+// schemaVersion returns the schema of the server database (-1 if there is none or it cannot be read).
+func schemaVersion(dataDir string) int {
+	st, err := store.OpenNoMigrate(filepath.Join(dataDir, "thevault.db"))
+	if err != nil {
+		return -1
+	}
+	defer st.Close()
+	v, err := st.SchemaVersion(context.Background())
+	if err != nil {
+		return -1
+	}
+	return v
+}
+
+// keepPrevious keeps the installed program as prev, to put it back if the new one does not start.
+func keepPrevious(bin, prev string) bool {
+	self, err := os.Executable()
+	if err == nil {
+		self, err = filepath.EvalSymlinks(self)
+	}
+	if err != nil || self == bin {
+		return false // upgrading the installed program in place: nothing else to keep
+	}
+	if _, err := os.Stat(bin); err != nil {
+		return false
+	}
+	_ = os.Remove(prev)
+	// A hard link keeps the old file when the new program is renamed over bin.
+	return os.Link(bin, prev) == nil
+}
+
+// restartService restarts the background service (with whatever program is installed).
+func restartService() {
+	switch runtime.GOOS {
+	case "darwin":
+		target := guiDomain() + "/" + Label
+		if _, err := launchctl("kickstart", "-k", target); err != nil {
+			// Not loaded (e.g. the new version's bootstrap failed): load it again, RunAtLoad starts it.
+			_, _ = launchctl("bootstrap", guiDomain(), plistPath())
+			_, _ = launchctl("enable", target)
+		}
+	case "linux":
+		_, _ = systemctlUser("restart", UnitName)
+	}
+}
+
+// waitVersion waits until the local server answers with a version accepted by ok.
+func waitVersion(cfg *config.Config, ok func(string) bool, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
 	for {
 		running, err := runningVersion(localURL(cfg))
-		if err == nil && running == version {
+		if err == nil && ok(running) {
 			return nil
 		}
 		if time.Now().After(deadline) {
 			if err != nil {
 				return fmt.Errorf("il server non risponde dopo l'aggiornamento: %w (registro: %s)", err, LogPath(cfg.DataDir))
 			}
-			return fmt.Errorf("risponde ancora la versione %s invece della %s (registro: %s)", running, version, LogPath(cfg.DataDir))
+			return fmt.Errorf("risponde ancora la versione %s (registro: %s)", running, LogPath(cfg.DataDir))
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

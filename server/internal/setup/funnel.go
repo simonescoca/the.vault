@@ -1,10 +1,12 @@
 package setup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -38,7 +40,91 @@ type tsStatus struct {
 	BackendState string `json:"BackendState"`
 	Self         struct {
 		DNSName string `json:"DNSName"`
+		// KeyExpiry is set while the node key expires (the Tailscale default, 180 days): when it does, the
+		// server is no longer reachable from outside home until someone logs in again.
+		KeyExpiry *time.Time `json:"KeyExpiry"`
 	} `json:"Self"`
+}
+
+// serveConfig is the part of 'tailscale funnel status --json' that tells what is published.
+type serveConfig struct {
+	Web map[string]struct {
+		Handlers map[string]struct {
+			Proxy string `json:"Proxy"`
+		} `json:"Handlers"`
+	} `json:"Web"`
+	AllowFunnel map[string]bool `json:"AllowFunnel"`
+}
+
+// funnelPublishes reports whether a 'tailscale funnel status --json' output publishes https://host on the
+// internet and forwards it to the local port.
+func funnelPublishes(statusJSON []byte, host, port string) bool {
+	var c serveConfig
+	if json.Unmarshal(statusJSON, &c) != nil {
+		return false
+	}
+	hp := host + ":443"
+	if !c.AllowFunnel[hp] {
+		return false
+	}
+	for _, h := range c.Web[hp].Handlers {
+		if strings.HasSuffix(strings.TrimRight(h.Proxy, "/"), ":"+port) {
+			return true
+		}
+	}
+	return false
+}
+
+// funnelActive asks Tailscale whether Funnel publishes host for the local port (an error: we cannot tell).
+func funnelActive(cli, host, port string) (bool, error) {
+	if cli == "" {
+		return false, errors.New("Tailscale non installato")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, cli, "funnel", "status", "--json").Output()
+	if err != nil {
+		return false, err
+	}
+	return funnelPublishes(out, host, port), nil
+}
+
+// tailscaleLogin tells how to log in to Tailscale: the command on Linux, the app on the Mac.
+func tailscaleLogin(linux bool) string {
+	if linux {
+		return "esegui 'sudo tailscale up' e apri il link che compare"
+	}
+	return "apri Tailscale (l'icona nella barra dei menu) e accedi al tuo account"
+}
+
+// keyExpiryNote describes the expiry of this computer's Tailscale key ("" if it never expires).
+func keyExpiryNote(st *tsStatus, now time.Time, linux bool) string {
+	if st.Self.KeyExpiry == nil {
+		return ""
+	}
+	name := strings.SplitN(st.Self.DNSName, ".", 2)[0]
+	fix := "disattiva la scadenza: login.tailscale.com/admin/machines › " + name + " › ⋯ › Disable key expiry"
+	if st.Self.KeyExpiry.Before(now) {
+		return "✗ la chiave Tailscale di questo computer è scaduta: The Vault non è raggiungibile da fuori casa.\n" +
+			"                    Per rinnovarla " + tailscaleLogin(linux) + ", poi " + fix
+	}
+	return "⚠ la chiave Tailscale di questo computer scade il " + st.Self.KeyExpiry.Local().Format("02/01/2006") +
+		": da allora The Vault non sarà raggiungibile da fuori casa.\n                    Per evitarlo " + fix
+}
+
+// tailscaleSummary describes Tailscale for 'status'.
+func tailscaleSummary(cli string, now time.Time, linux bool) string {
+	st, err := tailscaleStatus(cli)
+	switch {
+	case err != nil:
+		return "✗ non risponde (" + err.Error() + ")"
+	case st.BackendState != "Running":
+		return "✗ non collegato: " + tailscaleLogin(linux)
+	}
+	if note := keyExpiryNote(st, now, linux); note != "" {
+		return note
+	}
+	return "✓ collegato (" + strings.TrimSuffix(st.Self.DNSName, ".") + "), chiave senza scadenza"
 }
 
 func tailscaleStatus(cli string) (*tsStatus, error) {
@@ -68,13 +154,17 @@ func PublicHost() string {
 	return strings.TrimSuffix(st.Self.DNSName, ".")
 }
 
-// runFunnel runs a Tailscale command, showing its output (it may contain the link to enable Funnel).
-func (w *Wizard) runFunnel(args []string) error {
+// runFunnel runs a Tailscale command, showing its output (it may contain the link to enable Funnel), and
+// returns that output too.
+func (w *Wizard) runFunnel(args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
+	var out bytes.Buffer
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, w.Out, w.Out
-	return cmd.Run()
+	cmd.Stdin = os.Stdin
+	cmd.Stdout, cmd.Stderr = io.MultiWriter(w.Out, &out), io.MultiWriter(w.Out, &out)
+	err := cmd.Run()
+	return out.String(), err
 }
 
 func setupFunnel(w *Wizard, cfg *config.Config) error {
@@ -137,13 +227,21 @@ func setupFunnel(w *Wizard, cfg *config.Config) error {
 			w.say("     Se richiesta, inserisci la password di amministratore.")
 			sudo = []string{"sudo"}
 		}
-		err = w.runFunnel(append(sudo, cli, "funnel", "--bg", "--yes", port))
-		if err != nil {
+		out, err := w.runFunnel(append(sudo, cli, "funnel", "--bg", "--yes", port))
+		if err != nil && (strings.Contains(out, "flag provided but not defined") || strings.Contains(out, "unknown flag")) {
 			// Older CLIs do not know --yes.
-			err = w.runFunnel(append(sudo, cli, "funnel", "--bg", port))
+			_, err = w.runFunnel(append(sudo, cli, "funnel", "--bg", port))
+		}
+		host := strings.TrimSuffix(st.Self.DNSName, ".")
+		if err == nil {
+			// The command can end without publishing anything (e.g. Funnel not allowed on the account).
+			if ok, ferr := funnelActive(cli, host, port); ferr == nil && !ok {
+				err = errors.New("Tailscale non pubblica il server su internet")
+			}
 		}
 		if err != nil {
 			w.say("     ✗ Tailscale Funnel non si è attivato (%v).", err)
+			w.say("       Se è comparso un link, aprilo nel browser e conferma l'attivazione di Funnel, poi riprova.")
 			again, err := w.askYesNo("     Riprovo?", true)
 			if err != nil {
 				return err
@@ -153,9 +251,8 @@ func setupFunnel(w *Wizard, cfg *config.Config) error {
 			}
 			continue
 		}
-		host := strings.TrimSuffix(st.Self.DNSName, ".")
 		cfg.PublicURL = "https://" + host
-		w.say("     Verifico che il server sia raggiungibile su %s …", cfg.PublicURL)
+		w.say("     Verifico che il server risponda su %s …", cfg.PublicURL)
 		deadline := time.Now().Add(90 * time.Second)
 		var last error
 		for time.Now().Before(deadline) {
@@ -165,10 +262,16 @@ func setupFunnel(w *Wizard, cfg *config.Config) error {
 			time.Sleep(3 * time.Second)
 		}
 		if last != nil {
-			w.say("     ⚠ Non ancora raggiungibile (%v). A volte servono un paio di minuti per il certificato:", last)
+			w.say("     ⚠ Non risponde ancora (%v). A volte servono un paio di minuti per il certificato:", last)
 			w.say("       controlla più tardi con 'thevault-server status'.")
 		} else {
-			w.say("     ✓ Raggiungibile da internet.")
+			// From here the address goes through Tailscale's own network: the real test is from outside.
+			w.say("     ✓ Il server risponde ed è pubblicato su internet con Tailscale Funnel.")
+			w.say("       Prova da fuori casa: da un telefono con i dati mobili (non il Wi-Fi) apri")
+			w.say("       %s/v1/health  (deve comparire \"thevault\").", cfg.PublicURL)
+		}
+		if note := keyExpiryNote(st, time.Now(), w.linux()); note != "" {
+			w.say("     %s", note)
 		}
 		return nil
 	}
@@ -193,13 +296,30 @@ func Status(dataDir string) error {
 	if runtime.GOOS == "linux" {
 		fmt.Println("  Avvio automatico:", systemdSummary())
 	}
-	if cfg.PublicURL == "" {
+	cli := tailscaleCLI()
+	if cli != "" {
+		fmt.Println("  Tailscale:       ", tailscaleSummary(cli, time.Now(), runtime.GOOS == "linux"))
+	}
+	host := strings.TrimPrefix(cfg.PublicURL, "https://")
+	_, port, _ := net.SplitHostPort(cfg.Listen)
+	var public error
+	if cfg.PublicURL != "" {
+		public = checkHealth(cfg.PublicURL)
+	}
+	switch {
+	case cfg.PublicURL == "":
 		fmt.Println("  Fuori casa:       ✗ non configurato (riesegui 'thevault-server setup')")
-	} else if err := checkHealth(cfg.PublicURL); err != nil {
-		fmt.Println("  Fuori casa:       ✗", cfg.PublicURL, "non raggiungibile:", err)
-	} else {
-		fmt.Println("  Fuori casa:       ✓", cfg.PublicURL)
-		fmt.Println("  Indirizzo per l'app:", strings.TrimPrefix(cfg.PublicURL, "https://"))
+	case public != nil:
+		fmt.Println("  Fuori casa:       ✗", cfg.PublicURL, "non raggiungibile:", public)
+	default:
+		// The health check from here goes through Tailscale's own network: ask Tailscale whether Funnel is on.
+		if ok, err := funnelActive(cli, host, port); err == nil && !ok {
+			fmt.Println("  Fuori casa:       ⚠", cfg.PublicURL, "risponde solo ai dispositivi con Tailscale:")
+			fmt.Println("                    Funnel non è attivo, riesegui 'thevault-server setup'")
+		} else {
+			fmt.Println("  Fuori casa:       ✓", cfg.PublicURL, "(prova da un telefono con i dati mobili)")
+		}
+		fmt.Println("  Indirizzo per l'app:", host)
 	}
 	fmt.Println("  Backup:          ", backupSummary(cfg))
 	return nil
@@ -212,6 +332,12 @@ func backupSummary(cfg *config.Config) string {
 	switch {
 	case st.LastAttempt == 0:
 		return "nessuno ancora (il primo parte 30 secondi dopo l'avvio del server)"
+	case st.LastError == "" && st.MissingBlobs > 0:
+		return fmt.Sprintf("⚠ ultimo riuscito il %s, ma sul server mancano %d allegati: le loro copie nei backup restano.\n"+
+			"                    Dettagli nel registro: %s", when(st.LastSuccess), st.MissingBlobs, LogPath(cfg.DataDir))
+	case st.LastError == "" && time.Since(time.UnixMilli(st.LastSuccess)) > 26*time.Hour:
+		return "⚠ l'ultimo riuscito è del " + when(st.LastSuccess) + ", più di un giorno fa: il server era spento?\n" +
+			"                    Se dura, guarda il registro: " + LogPath(cfg.DataDir)
 	case st.LastError == "":
 		return "✓ ultimo riuscito il " + when(st.LastSuccess) + " in " + backup.Dir(cfg)
 	}

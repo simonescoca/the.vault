@@ -124,6 +124,7 @@ func installSystemdUnit(cfg *config.Config) error {
 	if err := copyExecutable(bin); err != nil {
 		return fmt.Errorf("copia del programma: %w", err)
 	}
+	linkCommand(bin)
 	p := unitPath()
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
@@ -137,6 +138,53 @@ func installSystemdUnit(cfg *config.Config) error {
 		}
 	}
 	return nil
+}
+
+// pathMarker and pathLine are appended once to ~/.bashrc (and ~/.zshrc if there is one): Ubuntu puts
+// ~/.local/bin in the PATH only if it existed when the user logged in, so without them a terminal opened on
+// the desktop right after the setup would not find the command.
+const (
+	pathMarker = "# The Vault server: the command thevault-server in new terminals"
+	pathLine   = `case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac`
+)
+
+// linkCommand makes 'thevault-server' (status, backup, setup…) available in new terminals: a link in
+// ~/.local/bin to the program in the data folder. Best effort: the full path always works.
+func linkCommand(bin string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	dir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	link := filepath.Join(dir, "thevault-server")
+	if cur, err := os.Readlink(link); err != nil || cur != bin {
+		tmp := link + ".new"
+		_ = os.Remove(tmp)
+		if os.Symlink(bin, tmp) == nil {
+			_ = os.Rename(tmp, link)
+		}
+	}
+	addPathLine(filepath.Join(home, ".bashrc"), true)
+	addPathLine(filepath.Join(home, ".zshrc"), false)
+}
+
+func addPathLine(rc string, create bool) {
+	b, err := os.ReadFile(rc)
+	if err != nil && !(create && errors.Is(err, os.ErrNotExist)) {
+		return
+	}
+	if strings.Contains(string(b), pathMarker) {
+		return
+	}
+	f, err := os.OpenFile(rc, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "\n%s\n%s\n", pathMarker, pathLine)
 }
 
 func uninstallSystemdUnit(dataDir string) error {

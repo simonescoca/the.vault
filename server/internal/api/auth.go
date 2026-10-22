@@ -130,7 +130,8 @@ func (s *Server) otpVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	o, err := s.Store.GetOTP(ctx, email)
+	// The attempt is counted before the check, atomically: parallel requests cannot try more codes.
+	o, err := s.Store.TakeOTPAttempt(ctx, email, otpMaxAttempts, nowMs())
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusGone, "otp_expired", "no valid code: request a new one")
 		return
@@ -139,26 +140,23 @@ func (s *Server) otpVerify(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, err)
 		return
 	}
-	if nowMs() > o.ExpiresAt || o.Attempts >= otpMaxAttempts {
-		_ = s.Store.DeleteOTP(ctx, email)
-		writeError(w, http.StatusGone, "otp_expired", "the code has expired: request a new one")
-		return
-	}
 	if !hmac.Equal(o.CodeMAC, s.otpMAC(email, code)) {
-		n, err := s.Store.IncOTPAttempts(ctx, email)
-		if err != nil {
-			s.internal(w, err)
-			return
-		}
-		left := otpMaxAttempts - n
+		left := otpMaxAttempts - o.Attempts
 		if left <= 0 {
-			_ = s.Store.DeleteOTP(ctx, email)
+			_, _ = s.Store.ConsumeOTP(ctx, email, o.CodeMAC)
 			left = 0
 		}
 		writeError(w, http.StatusUnprocessableEntity, "otp_invalid", "wrong code", map[string]any{"attemptsLeft": left})
 		return
 	}
-	_ = s.Store.DeleteOTP(ctx, email)
+	// Only one request can use a code (two at the same time would create two devices).
+	if used, err := s.Store.ConsumeOTP(ctx, email, o.CodeMAC); err != nil {
+		s.internal(w, err)
+		return
+	} else if !used {
+		writeError(w, http.StatusGone, "otp_expired", "the code has already been used: request a new one")
+		return
+	}
 	if !s.Cfg.IsAllowed(email) {
 		writeError(w, http.StatusUnprocessableEntity, "otp_invalid", "wrong code", map[string]any{"attemptsLeft": 0})
 		return
